@@ -1,0 +1,49 @@
+{
+
+    "Projeto-x":{
+        "start_date":"",
+        "end_date":"",
+
+        "cronograma": {
+            "wp1":{
+
+                "atividade1":{
+                    "trl":"",
+
+                    "start_date":"",
+                    "end_date":"",
+
+                    "start_mod":"",
+                    "end_mod":"",
+
+                    "tasks":{
+                        "name":"",
+
+                        "start_date":"",
+                        "end_date":""
+                    }
+                }
+
+            }
+        },
+
+        "persons":[
+
+        ],
+
+        "sheets":{
+            "person1":{
+                "sheet":"dataframe",
+                "wp1": "dataframe",
+                "wp2": "dataframe",
+                "afetacao": "dataframe"
+            }
+            
+        }
+
+    }
+
+
+    
+
+}

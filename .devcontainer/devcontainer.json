@@ -1,0 +1,6 @@
+{
+    "name": "Python-Streamlit",
+    "appPort": [8501],
+    "dockerFile": "Dockerfile"
+  }
+  
