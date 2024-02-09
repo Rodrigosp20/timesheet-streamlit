@@ -5,16 +5,18 @@ import plotly.figure_factory as ff
 import datetime
 from team import team_tab
 from timeline import timeline_tab
-from classes import *
+from Project import *
 
+def save_changes():
+    # Your code for saving changes goes here
+    st.sidebar.write("Changes saved!")
 
-def recalculate_horas_trabalhadas(df):
-    df_calcs = pd.DataFrame(columns=df.columns, index=['Horas trabalhadas', 'FTE'])
-
-    df_calcs.loc['Horas trabalhadas'] = df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Faltas'] - df.loc['Férias']
-    df_calcs.loc['FTE'] = df.loc['Horas reais'] / (df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Férias'])
-
-    return df_calcs
+def process_file(file):
+    # Process the uploaded file
+    if file:
+        df = pd.read_csv(file)  # Example: Read CSV file
+        st.write("Selected file content:")
+        st.write(df)  # Display the content of the selected file
 
 def update_sheets():
     for person in st.session_state.project['persons'].itertuples(index=False):
@@ -68,7 +70,17 @@ def validate_activities_form(acts, wps):
 
 def main():
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Projeto", "Cronograma", "Equipa", "Pessoal", "Imputação"])
+    st.sidebar.title("Sidebar")
+
+    if st.sidebar.button("Save Changes"):
+        save_changes()
+
+    # Select File Button
+    selected_file = st.sidebar.file_uploader("Select File", type=["csv", "xlsx"])
+    if selected_file is not None:
+        process_file(selected_file)
+
+    project_tab, timeline_tab, team_tab, sheet_tab, computation_tab = st.tabs(["Projeto", "Cronograma", "Equipa", "Pessoal", "Imputação"])
 
     # Initialize data structure      
     if 'projects' not in st.session_state:
@@ -83,7 +95,7 @@ def main():
     if 'key' not in st.session_state:
         st.session_state.key = 0 
 
-    with tab1:
+    with project_tab:
 
         if not st.session_state.project:
             st.session_state.project_name = st.selectbox('Select a Project', [""] + list(st.session_state.projects.keys()))
@@ -101,13 +113,10 @@ def main():
             end_date = st.date_input("Data Fim", value=project.end_date, format="DD/MM/YYYY")
 
             if st.button("Save changes"):
-                #APPLY CHANGES TO ALL PROJECT DATAFRAMES IF THEY EXIST
-                project['start_date'] = start_date
-                project['end_date'] = end_date
-
-                st.experimental_rerun()
-                
-    with tab2:
+                project.change_date(start_date, end_date)
+                st.rerun()
+    
+    with timeline_tab:
         
         if project := st.session_state.project:
             
@@ -166,7 +175,7 @@ def main():
                         ),
                         "Data Fim": st.column_config.DateColumn(
                             "Data Fim",
-                            min_value=project.end_date,
+                            max_value=project.end_date,
                             default=project.end_date,
                             format="DD/MM/YYYY",
                             required=True
@@ -199,7 +208,7 @@ def main():
         
         #timeline_tab()
 
-    with tab3:
+    with team_tab:
         
         st.title(f"Perfis do {st.session_state.project_name}")
         
@@ -244,15 +253,15 @@ def main():
 
             if st.button("Save Changes", key="save_profiles"):
                 project.update_team(new_team)
-                #update_sheets()
-                #CREATE OR MODIFY SHEETS FOR EACH PERSON
                 st.rerun()
             
     
-    with tab4:
+    with sheet_tab:
         project = st.session_state.project
 
         if member := st.selectbox("Person", options= st.session_state.project.team['Nome'].to_list()):
+
+            saved_clicked = st.button("Save Changes")
 
             sheet = project.sheets[member]
 
@@ -262,13 +271,16 @@ def main():
                 use_container_width=True
             )
 
-            result = recalculate_horas_trabalhadas(modifications)
+            mod_calcs = pd.DataFrame(columns=modifications.columns, index=['Horas trabalhadas', 'FTE'])
 
-            if saved_clicked := st.button("Save Changes"):
+            mod_calcs.loc['Horas trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
+            mod_calcs.loc['FTE'] = modifications.loc['Horas reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
+
+            if saved_clicked:
                 project.sheets[member].work.iloc[0:5] = modifications.copy()
-                project.sheets[member].work.iloc[5:] = result.copy()
+                project.sheets[member].work.iloc[5:] = mod_calcs.copy()
 
-            st.dataframe(result)
+            st.dataframe(mod_calcs)
 
             all_wps = pd.DataFrame(columns= ['WP', 'TRL'].append(modifications.columns))
             for wp, df in sheet.wps.items():
@@ -322,7 +334,7 @@ def main():
                 st.dataframe(group_wp.set_index(['WP', 'TRL']))
 
             
-    with tab5:
+    with computation_tab:
 
         project = st.session_state.project
 
@@ -362,7 +374,6 @@ def main():
                 person_wp_trl_hours = pd.concat([person_wp_trl_hours, by_wp_trl])
         
         st.dataframe(person_total_hours.drop('Person', axis=1).groupby('WP').sum().reset_index())
-
 
         
         st.dataframe(person_total_hours, hide_index=True)
