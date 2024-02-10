@@ -26,6 +26,7 @@ planned_work_schema = {
     "person" : "string",
     "wp" : "string",
     "activity" : "string",
+    "trl": "string"
 }
 
 persons_schema = {
@@ -61,50 +62,8 @@ def recalculate_horas_trabalhadas(df):
 
     return df_calcs
 
-def update_sheets():
-    for person in st.session_state.project['persons'].itertuples(index=False):
 
-        if person.Nome not in st.session_state.project['sheets'].values():
-
-            person_sheets = {}
-            
-            start_date = st.session_state.project['start_date']
-            end_date = st.session_state.project['end_date']
-
-            months_range = pd.date_range(start=start_date, end=end_date, freq='MS')
-            formatted_columns = [month.strftime('%b/%y') for month in months_range]
-
-            df = pd.DataFrame(columns=formatted_columns, index=['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas reais', 'Horas trabalhadas', 'FTE'])
-            
-            df.loc['Jornada Diária'] = 8
-            df.loc['Dias Úteis'] = 20
-            df.loc['Faltas'] = 0
-            df.loc['Férias'] = 0
-            df.loc['Horas reais'] = 0
-            
-            df.loc['Horas trabalhadas'] = df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Faltas'] - df.loc['Férias']
-            df.loc['FTE'] = df.loc['Horas reais'] / (df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Férias'])
-
-            person_sheets['sheet'] = df
-
-            for wp, activites in st.session_state.project['timeline'].items():
-
-                df = pd.DataFrame(columns=['TRL']+formatted_columns, index=activites.keys())
-                for act in activites.keys():
-                    df.loc[act,'TRL'] = st.session_state.project['timeline'][wp][act]['trl']
-
-                df.loc[:, df.columns != 'TRL'] = 0
-
-                person_sheets[wp] = df
-        
-        else:
-            pass
-            #TODO: Modify Dataframe
-
-        st.session_state.project['sheets'][person.Nome] = person_sheets
-
-def generate_excel_content():
-
+def save_data():
     with open('data.pkl', 'wb') as f:
         pickle.dump({
             'timelines':st.session_state.timelines,
@@ -113,39 +72,20 @@ def generate_excel_content():
             'persons':st.session_state.persons
         }, f)
 
-    excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-        st.session_state.timelines.to_excel(writer, sheet_name='Timelines', index=False)
-        st.session_state.persons.to_excel(writer, sheet_name='Persons', index=False)
-        st.session_state.contracts.to_excel(writer, sheet_name='Contracts', index=False)
-        st.session_state.projects.to_excel(writer, sheet_name='Projects', index=False)
-
-    excel_buffer.seek(0)
-    return excel_buffer.read()
-
-@st.cache_resource
 def load_file(file):
-    #dfs = pd.read_excel(file, sheet_name=None)
-    dfs = pickle.load(file)
-    st.session_state.timelines= dfs['timelines']
-    st.session_state.persons = dfs['persons']
-    st.session_state.contracts = dfs['contracts']
-    st.session_state.projects = dfs['projects']
-
+    if file:
+        dfs = pickle.load(file)
+        st.session_state.timelines= dfs['timelines']
+        st.session_state.persons = dfs['persons']
+        st.session_state.contracts = dfs['contracts']
+        st.session_state.projects = dfs['projects']
+    else:
+        st.session_state.timelines = pd.DataFrame(columns=timelines_schema.keys()).astype(timelines_schema)
+        st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
+        st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
+        st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
 
 def load_empty_state():
-
-    if 'timelines' not in st.session_state:
-        st.session_state.timelines = pd.DataFrame(columns=timelines_schema.keys()).astype(timelines_schema)
-    
-    if 'persons' not in st.session_state:
-        st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
-    
-    if 'contracts' not in st.session_state:
-        st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
-    
-    if 'projects' not in st.session_state:
-        st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
 
     if 'project' not in st.session_state:
         st.session_state.project = pd.DataFrame()
@@ -154,6 +94,21 @@ def load_empty_state():
     if 'key' not in st.session_state:
         st.session_state.key = 0
 
+def value_changed(label, value):
+
+    if label not in st.session_state:
+        st.session_state[label] = value
+        return True
+
+    if st.session_state[label] != value:
+        st.session_state[label] = value
+        return True
+    
+    st.session_state[label] = value
+    return False
+
+
+
 def main():
   
     load_empty_state()
@@ -161,23 +116,22 @@ def main():
     ## SIDEBAR WIDGETS
 
     st.sidebar.title("Ficheiro de Dados")
-    if file:= st.sidebar.file_uploader("Carrega o Ficheiro", type=".pkl", label_visibility='hidden'):
+    file = st.sidebar.file_uploader("Carrega o Ficheiro", type=".pkl", label_visibility='hidden')
+    if value_changed("selected_file", file):
+
         load_file(file)
 
     if st.sidebar.button("Save Progress", use_container_width=True):
-        excel_content = generate_excel_content()
-        b64 = base64.b64encode(excel_content).decode()
-        href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="output.xlsx">Download Excel File</a>'
-        st.sidebar.markdown(href, unsafe_allow_html=True)
+        save_data()
 
     st.sidebar.divider()
 
     selected_project = st.sidebar.selectbox('Select a Project', options = [None] + st.session_state.projects['name'].to_list())
-
-    if selected_project != st.session_state.project_name:
-        st.session_state.project_name = selected_project
+    
+    if value_changed("project_name", selected_project):
+        
         if selected_project != None:
-            st.session_state.project = st.session_state.projects[st.session_state.projects == selected_project].iloc[0]
+            st.session_state.project = st.session_state.projects[st.session_state.projects['name'] == selected_project].iloc[0]
         else:
             st.session_state.project = pd.DataFrame()
 
@@ -197,9 +151,7 @@ def main():
         if st.button("Criar Projeto"):
             if project_name and start_date and end_date:
 
-                #if projects
-
-                if start_date < end_date:
+                if projects[projects['name'] == project_name].empty and start_date < end_date:
                     ind = projects.index.max() + 1
                     
                     for month in  date_range(start_date, end_date):
@@ -239,8 +191,12 @@ def main():
         timeline_mod = st.data_editor(
             timeline.iloc[:, 1:],
             column_config={
-                "wp": st.column_config.SelectboxColumn(
+                "wp": st.column_config.TextColumn(
                     "WP",
+                    required=True
+                ),
+                "activity": st.column_config.TextColumn(
+                    "Atividade",
                     required=True
                 ),
                 "trl": st.column_config.SelectboxColumn(
@@ -267,13 +223,18 @@ def main():
             num_rows='dynamic',
             use_container_width=True
         )
-
+        
         if st.button("Save Changes"):
-            #Logistic of change activities
+            if len(timeline_mod["activity"]) != len(set(timeline_mod["activity"])):
+                st.toast("Duplicate values found in the 'Names' column! Please ensure all values are unique.")
+
+            timeline_mod.insert(0,"project",name)
+            update_timeline(name, timeline_mod)
             st.rerun()
         
+        
     
-    with tab3:
+    with tab_team:
         name = st.session_state.project_name
         contracts = st.session_state.contracts
 
@@ -324,24 +285,68 @@ def main():
                 use_container_width = True,
                 hide_index=True
             )
-
-        if st.button("Save Changes"):
-            #Logistic of change team
+        print(st.session_state.project['man_sheet'])
+        print(st.session_state.project['planned_work'])
+        if st.button("Save Changes", key="save_team"):
+            contacts_mod.insert(0,"project",name)
+            update_contracts(name, contacts_mod)
             st.rerun()
 
-    with tab5:
+    with tab_sheet:
 
         man_sheet = st.session_state.project["man_sheet"]
+        planned_work = st.session_state.project["planned_work"]
 
         contracts = st.session_state.contracts
 
-        if person := st.selectbox("Pessoa", options= st.session_state.project['sheets'].keys()):
+        if person := st.selectbox("Pessoa", options= st.session_state.project['man_sheet']['person'].unique()):
+
+            sheet = man_sheet[man_sheet['person'] == person].set_index('indicator')
 
             modifications = st.data_editor(
-                st.session_state.project['sheets'][person]['sheet'].iloc[0:5],
+                sheet.iloc[:5, 1:],
                 key = f"{person}_sheet",
                 use_container_width=True
             )
+
+           
+            modifications.loc['Horas trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
+            modifications.loc['FTE'] = modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
+
+            st.dataframe(
+                modifications.iloc[5:],
+                use_container_width=True
+            )
+
+            person_work = planned_work[planned_work['person'] == person]
+
+            for wp in planned_work[planned_work['person'] == person]['wp'].unique():
+
+                wp_work = person_work[person_work['wp'] == wp].drop(columns=['trl', 'wp', 'person']).set_index('activity')
+
+                wp_sheet_modifications = st.data_editor(
+                    wp_work,
+                    column_config={
+                        "activity":st.column_config.TextColumn(
+                            wp
+                        )
+                    }
+                )
+
+                person_work = person_work.set_index('activity')
+                person_work.update(wp_sheet_modifications, overwrite=True)
+                person_work = person_work.reset_index()
+                #print(person_work.loc[person_work['wp'] == wp, ~person_work.isin(['activity','person','wp','trl'])])
+                #person_work_idx = planned_work.index[(planned_work['person'] == person) & (planned_work['wp'] == wp)]
+                #planned_work.loc[person_work_idx, wp_work_sheet.columns] = wp_work_sheet.loc[wp_work_sheet.index]
+
+                #person_work_idx = planned_work.index[person_work['wp'] == wp]
+                #person_work.loc[person_work_idx, wp_work_sheet.columns] = wp_work_sheet
+
+
+            st.dataframe(person_work)
+
+        
 
 
 
