@@ -26,12 +26,12 @@ def create_sheet(person, name):
     man_sheet = st.session_state.project['man_sheet']
     planned_work = st.session_state.project['planned_work']
 
-    new_sheet = pd.DataFrame({'person':person, 'indicator':['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas Reais', 'Salário', 'Horas Trabalhadas', 'FTE']})
+    new_sheet = pd.DataFrame({'person':person, 'indicator':['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas Reais', 'Salário', 'SS', 'Horas Trabalhadas',  'FTE']})
     
     st.session_state.project['man_sheet'] = pd.concat([man_sheet, new_sheet], ignore_index=True)
     st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Jornada Diária'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Jornada Diária'].fillna(8)
-    st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Salário'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Salário'].fillna(0)
     st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Dias Úteis'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Dias Úteis'].fillna(22)
+    st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'SS'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'SS'].fillna(23.75)
     st.session_state.project['man_sheet'] = st.session_state.project['man_sheet'].fillna(0)
     
     timelines = st.session_state.timelines

@@ -14,7 +14,9 @@ projects_schema = {
     "start_date": "datetime64[ns]",
     "end_date": "datetime64[ns]",
     "man_sheet": "object",
-    "planned_work": "object"
+    "planned_work": "object",
+    "time_allocation": "object",
+    "cost_allocation": "object"
 }
 
 man_sheet_schema = {
@@ -23,6 +25,20 @@ man_sheet_schema = {
 }
 
 planned_work_schema = {
+    "person" : "string",
+    "wp" : "string",
+    "activity" : "string",
+    "trl": "string"
+}
+
+time_allocation_schema = {
+    "person" : "string",
+    "wp" : "string",
+    "activity" : "string",
+    "trl": "string"
+}
+
+cost_allocation_schema = {
     "person" : "string",
     "wp" : "string",
     "activity" : "string",
@@ -157,11 +173,15 @@ def main():
                     for month in  date_range(start_date, end_date):
                         man_sheet_schema[month] = 'float64'
                         planned_work_schema[month] = 'float64'
+                        cost_allocation_schema[month] = 'float64'
+                        time_allocation_schema[month] = 'float64'
                     
                     man_sheet = pd.DataFrame(columns=man_sheet_schema.keys()).astype(man_sheet_schema)
                     planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
+                    cost_allocation = pd.DataFrame(columns=cost_allocation_schema.keys()).astype(cost_allocation_schema)
+                    time_allocation = pd.DataFrame(columns=time_allocation_schema.keys()).astype(time_allocation_schema)
 
-                    projects.loc[ind] = [project_name, start_date, end_date, man_sheet, planned_work]
+                    projects.loc[ind] = [project_name, start_date, end_date, man_sheet, planned_work, cost_allocation, time_allocation]
 
                     st.rerun()
         
@@ -304,17 +324,17 @@ def main():
             sheet = man_sheet[man_sheet['person'] == person].set_index('indicator')
 
             modifications = st.data_editor(
-                sheet.iloc[:5, 1:],
+                sheet.iloc[:7, 1:],
                 key = f"{person}_sheet",
                 use_container_width=True
             )
 
            
-            modifications.loc['Horas trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
+            modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
             modifications.loc['FTE'] = modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
 
             st.dataframe(
-                modifications.iloc[5:],
+                modifications.loc[['Horas Trabalhadas', 'FTE']],
                 use_container_width=True
             )
 
@@ -336,16 +356,23 @@ def main():
                 person_work = person_work.set_index('activity')
                 person_work.update(wp_sheet_modifications, overwrite=True)
                 person_work = person_work.reset_index()
-                #print(person_work.loc[person_work['wp'] == wp, ~person_work.isin(['activity','person','wp','trl'])])
-                #person_work_idx = planned_work.index[(planned_work['person'] == person) & (planned_work['wp'] == wp)]
-                #planned_work.loc[person_work_idx, wp_work_sheet.columns] = wp_work_sheet.loc[wp_work_sheet.index]
-
-                #person_work_idx = planned_work.index[person_work['wp'] == wp]
-                #person_work.loc[person_work_idx, wp_work_sheet.columns] = wp_work_sheet
-
 
             st.dataframe(person_work)
 
+            horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
+
+            float_columns = person_work.select_dtypes(include=['float'])
+            sum_wp = person_work[float_columns.columns].sum()
+
+            person_work[float_columns.columns] = ((person_work[float_columns.columns] / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+
+            cost_activity = person_work.copy()
+
+            cost_activity[float_columns.columns] = person_work[float_columns.columns] * (((modifications.loc['Salário'] * 14) / 11)*(1+(modifications.loc['SS']/100)))
+            
+            st.dataframe(person_work)
+            st.dataframe(cost_activity)
+            st.dataframe(person_work.drop(columns=['activity', 'person']).groupby(['wp', 'trl']).sum())
         
 
 
