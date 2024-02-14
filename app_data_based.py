@@ -124,7 +124,6 @@ def value_changed(label, value):
     return False
 
 
-
 def main():
   
     load_empty_state()
@@ -168,8 +167,7 @@ def main():
             if project_name and start_date and end_date:
 
                 if projects[projects['name'] == project_name].empty and start_date < end_date:
-                    ind = projects.index.max() + 1
-                    
+                  
                     for month in  date_range(start_date, end_date):
                         man_sheet_schema[month] = 'float64'
                         planned_work_schema[month] = 'float64'
@@ -180,8 +178,8 @@ def main():
                     planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
                     cost_allocation = pd.DataFrame(columns=cost_allocation_schema.keys()).astype(cost_allocation_schema)
                     time_allocation = pd.DataFrame(columns=time_allocation_schema.keys()).astype(time_allocation_schema)
-
-                    projects.loc[ind] = [project_name, start_date, end_date, man_sheet, planned_work, cost_allocation, time_allocation]
+                
+                    projects.loc[len(projects)] = [project_name, start_date, end_date, man_sheet, planned_work, cost_allocation, time_allocation]
 
                     st.rerun()
         
@@ -251,8 +249,6 @@ def main():
             timeline_mod.insert(0,"project",name)
             update_timeline(name, timeline_mod)
             st.rerun()
-        
-        
     
     with tab_team:
         name = st.session_state.project_name
@@ -305,8 +301,7 @@ def main():
                 use_container_width = True,
                 hide_index=True
             )
-        print(st.session_state.project['man_sheet'])
-        print(st.session_state.project['planned_work'])
+        
         if st.button("Save Changes", key="save_team"):
             contacts_mod.insert(0,"project",name)
             update_contracts(name, contacts_mod)
@@ -318,21 +313,33 @@ def main():
         planned_work = st.session_state.project["planned_work"]
 
         contracts = st.session_state.contracts
-
+        #print(st.session_state.project['man_sheet'])
         if person := st.selectbox("Pessoa", options= st.session_state.project['man_sheet']['person'].unique()):
 
             sheet = man_sheet[man_sheet['person'] == person].set_index('indicator')
 
             modifications = st.data_editor(
                 sheet.iloc[:7, 1:],
-                key = f"{person}_sheet",
+                key = f"{person}_sheet_{st.session_state.key}",
                 use_container_width=True
             )
-
-           
+            
             modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
             modifications.loc['FTE'] = modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
 
+            if saved_button := st.button("Apply Changes"):
+                sheet.update(modifications)
+                sheet= sheet.reset_index()
+                sheet = sheet.set_index(['person','indicator'])
+                
+                st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].set_index(['person','indicator'])
+                st.session_state.project["man_sheet"].update(sheet)
+                st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].reset_index()    
+
+            if st.button("Discard Changes"):
+                st.session_state.key = (st.session_state.key + 1) % 2
+                st.rerun()
+           
             st.dataframe(
                 modifications.loc[['Horas Trabalhadas', 'FTE']],
                 use_container_width=True
@@ -346,6 +353,7 @@ def main():
 
                 wp_sheet_modifications = st.data_editor(
                     wp_work,
+                    key = f"{person}_work_{wp}_{st.session_state.key}",
                     column_config={
                         "activity":st.column_config.TextColumn(
                             wp
@@ -357,7 +365,9 @@ def main():
                 person_work.update(wp_sheet_modifications, overwrite=True)
                 person_work = person_work.reset_index()
 
-            st.dataframe(person_work)
+            if saved_button:
+                st.session_state.project['planned_work'] = st.session_state.project['planned_work'][st.session_state.project['planned_work']['person'] != person]
+                st.session_state.project['planned_work'] = pd.concat([st.session_state.project['planned_work'], person_work])
 
             horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
 
@@ -365,19 +375,40 @@ def main():
             sum_wp = person_work[float_columns.columns].sum()
 
             person_work[float_columns.columns] = ((person_work[float_columns.columns] / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+            if saved_button:
+                st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'][st.session_state.project['time_allocation']['person'] != person]
+                st.session_state.project['time_allocation'] = pd.concat([st.session_state.project['time_allocation'], person_work])
 
             cost_activity = person_work.copy()
 
             cost_activity[float_columns.columns] = person_work[float_columns.columns] * (((modifications.loc['Salário'] * 14) / 11)*(1+(modifications.loc['SS']/100)))
+            if saved_button:
+                st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'][st.session_state.project['cost_allocation']['person'] != person]
+                st.session_state.project['cost_allocation'] = pd.concat([st.session_state.project['cost_allocation'], cost_activity])
+
+                st.session_state.projects.iloc[st.session_state.projects['name'] == st.session_state.project_name] = st.session_state.project  
+                st.rerun()
             
             st.dataframe(person_work)
             st.dataframe(cost_activity)
             st.dataframe(person_work.drop(columns=['activity', 'person']).groupby(['wp', 'trl']).sum())
+
+
+    with tab_imputations:
+
+        ftes = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'FTE']
+
+        ftes = pd.merge(st.session_state.contracts.loc[:,['person','gender']], ftes, on='person', how='left')
         
 
+        st.dataframe(ftes.drop(columns=['person','indicator']).groupby('gender').sum())
 
+        "Atividade / Sum * Horas"
 
-        
+        float_columns = person_work.select_dtypes(include=['float'])
+        sum_wp = st.session_state.project["planned_work"][float_columns.columns].sum()
+        print(st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Horas Reais'])
+        print(st.session_state.project['planned_work'].drop(columns=['trl','activity']).groupby(['wp','person']).sum() / sum_wp)
         
     
 if __name__ == "__main__":

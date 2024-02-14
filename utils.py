@@ -15,16 +15,22 @@ def update_contracts(name, data):
     st.session_state.contracts = st.session_state.contracts[st.session_state.contracts['project'] != name]
     st.session_state.contracts = pd.concat([st.session_state.contracts, data], ignore_index=True)
 
-    #Dropping all sheest for now
+    #Dropping all sheets for now
     st.session_state.project['man_sheet'] = st.session_state.project['man_sheet'].drop(st.session_state.project['man_sheet'].index)
     st.session_state.project['planned_work'] = st.session_state.project['planned_work'].drop(st.session_state.project['planned_work'].index)
+    st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'].drop(st.session_state.project['time_allocation'].index)
+    st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'].drop(st.session_state.project['cost_allocation'].index)
     for person in data['person'].to_list():
         create_sheet(person, name)
-
-
+   
+    st.session_state.projects.iloc[st.session_state.projects['name'] == st.session_state.project_name] = st.session_state.project    
+ 
 def create_sheet(person, name):
     man_sheet = st.session_state.project['man_sheet']
     planned_work = st.session_state.project['planned_work']
+    cost_allocation = st.session_state.project['cost_allocation']
+    time_allocation = st.session_state.project['time_allocation']
+    
 
     new_sheet = pd.DataFrame({'person':person, 'indicator':['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas Reais', 'Salário', 'SS', 'Horas Trabalhadas',  'FTE']})
     
@@ -40,46 +46,7 @@ def create_sheet(person, name):
     new_work= pd.DataFrame({'person': person, 'wp':project_timeline['wp'], 'activity':project_timeline['activity'], 'trl':project_timeline['trl']})
     st.session_state.project['planned_work'] = pd.concat([planned_work, new_work], ignore_index=True)
     st.session_state.project['planned_work'] = st.session_state.project['planned_work'].fillna(0)
-
-def update_sheets():
-    for person in st.session_state.project['persons'].itertuples(index=False):
-
-        if person.Nome not in st.session_state.project['sheets'].values():
-
-            person_sheets = {}
-            
-            start_date = st.session_state.project['start_date']
-            end_date = st.session_state.project['end_date']
-
-            months_range = pd.date_range(start=start_date, end=end_date, freq='MS')
-            formatted_columns = [month.strftime('%b/%y') for month in months_range]
-
-            df = pd.DataFrame(columns=formatted_columns, index=['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas reais', 'Horas trabalhadas', 'FTE'])
-            
-            df.loc['Jornada Diária'] = 8
-            df.loc['Dias Úteis'] = 20
-            df.loc['Faltas'] = 0
-            df.loc['Férias'] = 0
-            df.loc['Horas reais'] = 0
-            
-            df.loc['Horas trabalhadas'] = df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Faltas'] - df.loc['Férias']
-            df.loc['FTE'] = df.loc['Horas reais'] / (df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Férias'])
-
-            person_sheets['sheet'] = df
-
-            for wp, activites in st.session_state.project['timeline'].items():
-
-                df = pd.DataFrame(columns=['TRL']+formatted_columns, index=activites.keys())
-                for act in activites.keys():
-                    df.loc[act,'TRL'] = st.session_state.project['timeline'][wp][act]['trl']
-
-                df.loc[:, df.columns != 'TRL'] = 0
-
-                person_sheets[wp] = df
-        
-        else:
-            pass
-            #TODO: Modify Dataframe
-
-        st.session_state.project['sheets'][person.Nome] = person_sheets
-
+    st.session_state.project['cost_allocation'] = pd.concat([cost_allocation, new_work], ignore_index=True)
+    st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'].fillna(0)
+    st.session_state.project['time_allocation'] = pd.concat([time_allocation, new_work], ignore_index=True)
+    st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'].fillna(0)
