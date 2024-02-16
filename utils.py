@@ -10,6 +10,8 @@ def date_range(start, end):
 def update_timeline(name, data):
     st.session_state.timelines = st.session_state.timelines[st.session_state.timelines['project'] != name]
     st.session_state.timelines = pd.concat([st.session_state.timelines, data], ignore_index=True)
+    
+    st.session_state.projects.iloc[st.session_state.projects['name'] == st.session_state.project_name] = st.session_state.project
 
 def update_contracts(name, data):
     st.session_state.contracts = st.session_state.contracts[st.session_state.contracts['project'] != name]
