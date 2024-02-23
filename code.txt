@@ -123,7 +123,43 @@ with tab2:
         st.title(f"Perfis do {st.session_state.project_name}")
         
         if project := st.session_state.project:
-
+             contacts_mod = st.data_editor(
+                contracts.iloc[:, 1:], 
+                num_rows="dynamic",
+                column_config = {
+                    "person": st.column_config.TextColumn(
+                        "Nome",
+                        width = "medium",
+                        required = True,
+                    ),
+                    "profile": st.column_config.TextColumn(
+                        "Perfil",
+                        width="medium",
+                        required = True,
+                    ),
+                    "gender": st.column_config.SelectboxColumn(
+                        "Genero",
+                        options = ["M", "F"],
+                        width="small",
+                        required = True,
+                    ),
+                    "start_date": st.column_config.DateColumn(
+                        "Data de Inicio",
+                        format="DD/MM/YYYY",
+                        default=st.session_state.project['start_date'],
+                        step=1,
+                    ),
+                    "end_date": st.column_config.DateColumn(
+                        "Data de Termino",
+                        format="DD/MM/YYYY",
+                        default=st.session_state.project['end_date'],
+                        step=1,
+                    ),
+                },
+                use_container_width = True,
+                hide_index=True
+            )
+            
             new_persons = st.data_editor(
                 project['persons'], 
                 num_rows="dynamic",

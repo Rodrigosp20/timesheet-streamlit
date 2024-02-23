@@ -1,395 +1,536 @@
 import streamlit as st
+from streamlit_tags import st_tags
 import pandas as pd
 import numpy as np
-import plotly.figure_factory as ff
-import datetime
+import plotly.express as px
+import datetime, tempfile, os, base64, pickle
+from utils import *
 from team import team_tab
 from timeline import timeline_tab
-from Project import *
+from io import BytesIO
 
-def save_changes():
-    # Your code for saving changes goes here
-    st.sidebar.write("Changes saved!")
 
-def process_file(file):
-    # Process the uploaded file
+projects_schema = {
+    "name": "string",
+    "start_date": "datetime64[ns]",
+    "end_date": "datetime64[ns]",
+    "man_sheet": "object",
+    "planned_work": "object",
+    #"time_allocation": "object",
+    #"cost_allocation": "object",
+    "executed": "datetime64[ns]"
+}
+
+man_sheet_schema = {
+    "person" : "string",
+    "indicator" : "string",
+}
+
+planned_work_schema = {
+    "person" : "string",
+    "wp" : "string",
+    "activity" : "string",
+    "trl": "string"
+}
+
+timelines_schema = {
+    "project": "string",
+    "wp": "string",
+    "activity": "string",
+    "trl": "string",
+    "start_date": "datetime64[ns]",
+    "end_date": "datetime64[ns]",
+    "real_start_date": "datetime64[ns]",
+    "real_end_date": "datetime64[ns]"
+}
+
+contracts_schema = {
+    "project":"string",
+    "person":"string",
+    "profile":"string",
+    "gender": "string",
+    "start_date": "datetime64[ns]",
+    "end_date": "datetime64[ns]",
+}
+
+def save_data():
+    with open('data.pkl', 'wb') as f:
+        pickle.dump({
+            'timelines':st.session_state.timelines,
+            'contracts':st.session_state.contracts,
+            'projects':st.session_state.projects,
+        }, f)
+
+def load_file(file):
     if file:
-        df = pd.read_csv(file)  # Example: Read CSV file
-        st.write("Selected file content:")
-        st.write(df)  # Display the content of the selected file
+        dfs = pickle.load(file)
+        st.session_state.timelines= dfs['timelines']
+        #st.session_state.persons = dfs['persons']
+        st.session_state.contracts = dfs['contracts']
+        st.session_state.projects = dfs['projects']
+    else:
+        st.session_state.timelines = pd.DataFrame(columns=timelines_schema.keys()).astype(timelines_schema)
+        #st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
+        st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
+        st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
 
-def update_sheets():
-    for person in st.session_state.project['persons'].itertuples(index=False):
+def load_empty_state():
 
-        if person.Nome not in st.session_state.project['sheets'].values():
-
-            person_sheets = {}
-            
-            start_date = st.session_state.project['start_date']
-            end_date = st.session_state.project['end_date']
-
-            months_range = pd.date_range(start=start_date, end=end_date, freq='MS')
-            formatted_columns = [month.strftime('%b/%y') for month in months_range]
-
-            df = pd.DataFrame(columns=formatted_columns, index=['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas reais', 'Horas trabalhadas', 'FTE'])
-            
-            df.loc['Jornada Diária'] = 8
-            df.loc['Dias Úteis'] = 20
-            df.loc['Faltas'] = 0
-            df.loc['Férias'] = 0
-            df.loc['Horas reais'] = 0
-            
-            df.loc['Horas trabalhadas'] = df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Faltas'] - df.loc['Férias']
-            df.loc['FTE'] = df.loc['Horas reais'] / (df.loc['Jornada Diária'] * df.loc['Dias Úteis'] - df.loc['Férias'])
-
-            person_sheets['sheet'] = df
-
-            for wp, activites in st.session_state.project['timeline'].items():
-
-                df = pd.DataFrame(columns=['TRL']+formatted_columns, index=activites.keys())
-                for act in activites.keys():
-                    df.loc[act,'TRL'] = st.session_state.project['timeline'][wp][act]['trl']
-
-                df.loc[:, df.columns != 'TRL'] = 0
-
-                person_sheets[wp] = df
-        
-        else:
-            pass
-            #TODO: Modify Dataframe
-
-        st.session_state.project['sheets'][person.Nome] = person_sheets
-
-def validate_activities_form(acts, wps):
-
-    for wp in wps:
-        if acts[acts['WP'] == wp].empty:
-            return f"{wp} não tem nenhuma atividade associada"
-    
-    return None
-
-def main():
-
-    st.sidebar.title("Sidebar")
-
-    if st.sidebar.button("Save Changes"):
-        save_changes()
-
-    # Select File Button
-    selected_file = st.sidebar.file_uploader("Select File", type=["csv", "xlsx"])
-    if selected_file is not None:
-        process_file(selected_file)
-
-    project_tab, timeline_tab, team_tab, sheet_tab, computation_tab = st.tabs(["Projeto", "Cronograma", "Equipa", "Pessoal", "Imputação"])
-
-    # Initialize data structure      
-    if 'projects' not in st.session_state:
-        st.session_state.projects = {
-            "BLM" : Project(start_date=datetime.date(year=2024, month=1, day=1), end_date=datetime.date(year=2026, month=12, day=31))
-        }
-    
     if 'project' not in st.session_state:
-        st.session_state.project = None
-        st.session_state.project_name = ""
+        st.session_state.project = pd.DataFrame()
+        st.session_state.project_name = None
 
     if 'key' not in st.session_state:
-        st.session_state.key = 0 
+        st.session_state.key = 0
 
-    with project_tab:
+def value_changed(label, value):
 
-        if not st.session_state.project:
-            st.session_state.project_name = st.selectbox('Select a Project', [""] + list(st.session_state.projects.keys()))
-            st.session_state.project = st.session_state.projects.get(st.session_state.project_name)
-            
-            if st.session_state.project:
-                st.rerun()
-        
-        if st.session_state.project:
-            st.title(f"{st.session_state.project_name}")
+    if label not in st.session_state:
+        st.session_state[label] = value
+        return True
 
-            project = st.session_state.project
-
-            start_date = st.date_input("Data Inicio", value=project.start_date, format="DD/MM/YYYY")
-            end_date = st.date_input("Data Fim", value=project.end_date, format="DD/MM/YYYY")
-
-            if st.button("Save changes"):
-                project.change_date(start_date, end_date)
-                st.rerun()
+    if st.session_state[label] != value:
+        st.session_state[label] = value
+        return True
     
-    with timeline_tab:
+    st.session_state[label] = value
+    return False
+
+
+def main():
+  
+    load_empty_state()
+    
+    ## SIDEBAR WIDGETS
+    
+    st.sidebar.title("Ficheiro de Dados")
+    file = st.sidebar.file_uploader("Carrega o Ficheiro", type=".pkl", label_visibility='hidden')
+    if value_changed("selected_file", file):
+        load_file(file)
+
+    if st.sidebar.button("Save Progress", use_container_width=True):
+        save_data()
+
+    st.sidebar.divider()
+
+    selected_project = st.sidebar.selectbox('Select a Project', options = [None] + st.session_state.projects['name'].to_list())
+    
+    if value_changed("project_name", selected_project):
         
-        if project := st.session_state.project:
-            
-            st.title("Gantt")
-            gant = st.session_state.project.get_gant()
+        if selected_project != None:
+            st.session_state.project = st.session_state.projects[st.session_state.projects['name'] == selected_project].iloc[0]
+        else:
+            st.session_state.project = pd.DataFrame()
 
-            if len(gant) > 0:
-                gantt_df = pd.DataFrame(gant)
-                fig = ff.create_gantt(gantt_df, colors="Viridis",  index_col='Resource', show_colorbar=True, group_tasks=True)
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.write("Não foram adicionadas atividades ao projeto")
-            
-            tab_wp, tab_act = st.tabs(["Workpackage","Activty"])
+        st.rerun()
 
-            with tab_wp:
-                project = st.session_state.project
+    #####################
+    
+    if st.session_state.project.empty:
 
-                st.title('WP')
-                wp_list = st.data_editor(
-                    np.array(project.wps),
-                    hide_index=True,
-                    key=f"wp_{st.session_state.key}",
-                    column_config={
-                        "value": st.column_config.TextColumn(
-                            "Nome",
-                            required=True,
-                            width="large",
+        projects = st.session_state.projects
+        st.title("Criar Projeto")
 
-                        )
-                    },
-                    num_rows='dynamic'
-                )
-            
-                st.title('Atividades')
-                act_list = st.data_editor(
-                    project.activities,
-                    key=f"act_{st.session_state.key}",
-                    column_config={
-                        "WP": st.column_config.SelectboxColumn(
-                            "WP",
-                            options=wp_list,
-                            required=True
-                        ),
-                        "TRL": st.column_config.SelectboxColumn(
-                            "TRL",
-                            options=['TRL 3-4', 'TRL 5-9'],
-                            required=True
-                        ),
-                        "Data Inicio": st.column_config.DateColumn(
-                            "Data Inicio",
-                            min_value=project.start_date,
-                            default=project.start_date,
-                            format="DD/MM/YYYY",
-                            required=True
-                        ),
-                        "Data Fim": st.column_config.DateColumn(
-                            "Data Fim",
-                            max_value=project.end_date,
-                            default=project.end_date,
-                            format="DD/MM/YYYY",
-                            required=True
-                        )
-                    },
-                    hide_index=True,
-                    num_rows="dynamic",
-                    use_container_width=True
-                )
+        project_name = st.text_input("Nome do projeto")
+        start_date = st.date_input("Data de inicio", format="DD/MM/YYYY")
+        end_date = st.date_input("Data de encerramento", format="DD/MM/YYYY")
 
-                if st.button("Save Changes", key="wp"):
-                    act_list = act_list[act_list['WP'].isin(wp_list)]
+        if st.button("Criar Projeto"):
+            if project_name and start_date and end_date:
+
+                if projects[projects['name'] == project_name].empty and start_date < end_date:
+                  
+                    for month in  date_range(start_date, end_date):
+                        man_sheet_schema[month] = 'float64'
+                        planned_work_schema[month] = 'float64'
                     
-                    if not (error := validate_activities_form(act_list, wp_list)):
-                        project.update_activities(act_list, wp_list)
-                        st.rerun()
-                    else:
-                        st.write(error)
-                        
-           
-                if st.button("Discard Changes"):
-                    st.session_state.key = (st.session_state.key + 1) % 2
-                    st.rerun()
-
+                    man_sheet = pd.DataFrame(columns=man_sheet_schema.keys()).astype(man_sheet_schema)
+                    planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
                 
+                    projects.loc[len(projects)] = [project_name, start_date, end_date, man_sheet, planned_work, None]
 
+                    st.rerun()
+        return
 
-            with tab_act:
-                pass
-        
-        #timeline_tab()
+    tab_project, tab_timeline, tab_team, tab_sheet, tab_imputations, tab_costs = st.tabs(["Projeto", "Cronograma", "Equipa", "Pessoal", "Imputação Horas", "Custos"])
 
-    with team_tab:
-        
-        st.title(f"Perfis do {st.session_state.project_name}")
-        
-        if project := st.session_state.project:
+    with tab_project:
+        st.title(f"{st.session_state.project_name}")
 
-            new_team = st.data_editor(
-                project.team, 
-                num_rows="dynamic",
-                column_config = {
-                    "Perfil": st.column_config.TextColumn(
-                        "Perfil",
-                        width = "medium",
-                        required = True,
-                    ),
-                    "Nome": st.column_config.TextColumn(
-                        "Nome",
-                        width = "medium",
-                        required = True,
-                    ),
-                    "Genero": st.column_config.SelectboxColumn(
-                        "Genero",
-                        options = ["M", "F"],
-                        width="small",
-                        required = True,
-                    ),
-                    "Data Inicio": st.column_config.DateColumn(
-                        "Data Inicio",
-                        format="DD/MM/YYYY",
-                        default=project.start_date,
-                        step=1,
-                    ),
-                    "Data Fim": st.column_config.DateColumn(
-                        "Data Fim",
-                        format="DD/MM/YYYY",
-                        default=project.end_date,
-                        step=1,
-                    ),
-                },
-                use_container_width = True,
-                hide_index=True
-            )
-
-            if st.button("Save Changes", key="save_profiles"):
-                project.update_team(new_team)
-                st.rerun()
-            
-    
-    with sheet_tab:
         project = st.session_state.project
 
-        if member := st.selectbox("Person", options= st.session_state.project.team['Nome'].to_list()):
+        start_date = st.date_input("Data Inicio", value=project.loc['start_date'], format="DD/MM/YYYY")
+        end_date = st.date_input("Data Fim", value=project.loc['end_date'], format="DD/MM/YYYY")
 
-            saved_clicked = st.button("Save Changes")
+        if st.button("Save changes"):
+            #st.session_state.project['start_date'] = start_date
+            st.rerun()
+    
+    with tab_timeline:
+        name = st.session_state.project_name
+        
+        timeline = st.session_state.timelines[st.session_state.timelines['project'] == name]
+        
+        timeline = timeline.sort_values(by=['wp', 'activity', "start_date"])
 
-            sheet = project.sheets[member]
+        # Group by 'wp' and select min_date_min and max_date_max
+        result = timeline.groupby('wp').agg({'start_date': 'min', 'end_date': 'max', 'real_start_date': 'min', 'real_end_date': 'max'})
+        
+        gantt_data = []
+        last_wp = None
+        for act in timeline.itertuples():
+            if last_wp != act.wp:
+                wp = result.loc[act.wp]
+                gantt_data.append({
+                    'Task': act.wp,
+                    'Start': wp['start_date'],
+                    'Finish': wp['end_date'],
+                    'Color': "Planeado"
+                })
+
+                if wp['start_date'] != wp['real_start_date'] or wp['end_date'] != wp['real_end_date']:
+                    gantt_data.append({
+                        'Task': act.wp,
+                        'Start': wp['real_start_date'],
+                        'Finish': wp['real_end_date'],
+                        'Color': "Real"
+                    })
+                
+                if st.session_state.project['executed'] and pd.to_datetime(st.session_state.project['executed']) > wp['real_start_date']:
+                    gantt_data.append({
+                        'Task': act.wp,
+                        'Start': wp['real_start_date'],
+                        'Finish': st.session_state.project['executed'],
+                        'Color': "Executado"
+                    })
+                
+                last_wp = act.wp
+
+            gantt_data.append({
+                'Task': act.activity,
+                'Start': act.start_date,
+                'Finish': act.end_date,
+                'Color': f"Planeado"
+            })
+        
+            if act.start_date != act.real_start_date or act.end_date != act.real_end_date:   
+                gantt_data.append({
+                    'Task': act.activity,
+                    'Start': act.real_start_date,
+                    'Finish': act.real_end_date,
+                    'Color': f"Real"
+                })
+
+            if st.session_state.project['executed'] and pd.to_datetime(st.session_state.project['executed']) > act.real_start_date:
+                gantt_data.append({
+                    'Task': act.activity,
+                    'Start': act.real_start_date,
+                    'Finish': st.session_state.project['executed'],
+                    'Color': "Executado"
+                })
+        
+        if len(gantt_data) > 0:
+            gantt_df = pd.DataFrame(gantt_data)
+
+            fig = px.timeline(gantt_df, x_start="Start", x_end="Finish", y="Task", color="Color", color_discrete_map={'Planeado':"#0AA3EB", "Real":"#DAF1FC", "Executado":"#878787"}, category_orders={'Color': ["WP","Planeado","Real"]})
+            fig.update_yaxes(autorange="reversed")
+            fig.update_layout(barmode='group')
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.write('<p style="text-align: center;">Sem Dados Disponíveis</p>', unsafe_allow_html=True)
+
+        wps = st.data_editor(
+            np.array(timeline['wp'].unique()),
+            column_config={
+                "value": st.column_config.TextColumn(
+                    "WP",
+                    required = True,
+                    validate=".+",
+                    default="WP"
+                )
+            },
+            key=f"project_wp_{st.session_state.key}",
+            num_rows='dynamic'
+        )
+
+        timeline_mod = st.data_editor(
+            timeline.iloc[:, 1:],
+            column_config={
+                "wp": st.column_config.SelectboxColumn(
+                    "WP",
+                    options=wps,
+                    required=True
+                ),
+                "activity": st.column_config.TextColumn(
+                    "Atividade",
+                    required=True,
+                    default="A"
+                ),
+                "trl": st.column_config.SelectboxColumn(
+                    "TRL",
+                    options=['TRL 3-4', 'TRL 5-9'],
+                    required=True
+                ),
+                "start_date": st.column_config.DateColumn(
+                    "Data de Inicio [Planeada]",
+                    min_value=st.session_state.project["start_date"],
+                    default=st.session_state.project["start_date"],
+                    format="DD/MM/YYYY",
+                    required=True
+                ),
+                "end_date": st.column_config.DateColumn(
+                    "Data de Termino [Planeada]",
+                    max_value=st.session_state.project["end_date"],
+                    default=st.session_state.project["end_date"],
+                    format="DD/MM/YYYY",
+                    required=True
+                ),
+                "real_start_date": st.column_config.DateColumn(
+                    "Data de Inicio [Real]",
+                    min_value=st.session_state.project["start_date"],
+                    default=st.session_state.project["start_date"],
+                    format="DD/MM/YYYY",
+                    required=True
+                ),
+                "real_end_date": st.column_config.DateColumn(
+                    "Data de Termino [Real]",
+                    max_value=st.session_state.project["end_date"],
+                    default=st.session_state.project["end_date"],
+                    format="DD/MM/YYYY",
+                    required=True
+                )
+            },
+            hide_index=True,
+            num_rows='dynamic',
+            use_container_width=True
+        )
+        executed_date = st.date_input("Execução", value=st.session_state.project['executed'], min_value=st.session_state.project['start_date'], max_value=st.session_state.project['end_date'])
+
+        if st.button("Save Changes"):
+            if len(timeline_mod["activity"]) != len(set(timeline_mod["activity"])):
+                st.toast("Duplicate values found in the 'Names' column! Please ensure all values are unique.")
+            else:
+                st.session_state.project['executed'] = executed_date
+                timeline_mod.insert(0,"project",name)
+                update_timeline(name, timeline_mod)
+                st.rerun()
+        
+    
+    with tab_team:
+        name = st.session_state.project_name
+        contracts = st.session_state.contracts
+
+        project_contracts = contracts[contracts['project'] == name]
+
+        members = st_tags(
+            label='Membros do projeto',
+            text='Pesquisar',
+            value=list(project_contracts['person']),
+            suggestions=list(contracts['person'].unique()),
+            key=f"members_{st.session_state.key}"
+        )
+
+        updated = project_contracts.loc[project_contracts['person'].isin(members)]
+        updated = updated.set_index('person')
+
+        for member in members:
+
+            with st.expander(member):
+
+                updated.loc[member, 'profile'] = st.text_input("Pefil", key=f"{member}_perfil_{st.session_state.key}", value= updated.loc[member, 'profile'] if member in updated.index else '')
+                updated.loc[member,'gender'] = st.selectbox("Genero", options=["M","F"], key=f"{member}_genero_{st.session_state.key}", index=1 if not pd.isna(gender:=updated.loc[member,'gender']) and gender == 'F' else 0)
+                updated.loc[member,'start_date'] = st.date_input("Data de Inicio",key=f"{member}_inicio_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'start_date'] if not pd.isna(updated.loc[member,'start_date']) else st.session_state.project['start_date'], min_value=st.session_state.project['start_date'])
+                updated.loc[member,'end_date'] = st.date_input("Data de Termino",key=f"{member}_fim_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'end_date'] if not pd.isna(updated.loc[member,'end_date']) else st.session_state.project['end_date'], max_value=st.session_state.project['end_date'])
+
+        if st.button("Update Members"):
+            updated['project'] = st.session_state.project_name
+            updated = updated.reset_index()
+            
+            if updated.eq('').any().any():
+               st.error("Fill form")
+            else:
+                update_contracts(updated)
+                st.rerun()
+        
+        if st.button("Discard Changes"):
+            st.session_state.key = (st.session_state.key + 1) % 2
+            st.rerun()
+
+    with tab_sheet:
+
+        man_sheet = st.session_state.project["man_sheet"]
+        planned_work = st.session_state.project["planned_work"]
+
+        project_range = date_range(st.session_state.project['start_date'], st.session_state.project['end_date'])
+        contracts = st.session_state.contracts
+        
+        if person := st.selectbox("Selecionar Membro", options= st.session_state.project['man_sheet']['person'].unique()):
+            contract = contracts[contracts['person'] == person].iloc[0]
+
+            contract_range = date_range(contract['start_date'], contract['end_date'])
+
+            #columns_config = {date:st.column_config.NumberColumn(date,disabled=True) for date in project_range if date not in contract_range}
+            
+            hours_columns = {
+                date: st.column_config.NumberColumn(
+                    date,
+                    default=0,
+                    min_value=0,
+                    format="%f h"
+                ) for date in contract_range
+            }
+
+            money_columns = {
+                date: st.column_config.NumberColumn(
+                    date,
+                    min_value=0,
+                    format="%.2f €"
+                ) for date in contract_range
+            }
+            
+            float_columns = {
+                date: st.column_config.NumberColumn(
+                    date,
+                    min_value=0,
+                    format="%.2f"
+                ) for date in contract_range
+            }
+
+            percentage_columns = {
+                date: st.column_config.NumberColumn(
+                    date,
+                    min_value=0,
+                    format="%.2f %"
+                ) for date in contract_range
+            }
+
+            sheet = man_sheet[man_sheet['person'] == person].set_index('indicator')
 
             modifications = st.data_editor(
-                sheet.work.iloc[0:5],
-                key = f"{member}_sheet",
+                sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas Reais'], contract_range],
+                key = f"{person}_sheet_{st.session_state.key}",
+                column_config=hours_columns,
                 use_container_width=True
             )
 
-            mod_calcs = pd.DataFrame(columns=modifications.columns, index=['Horas trabalhadas', 'FTE'])
+            modifications.loc['Salário'] = None
+            modifications.loc['SS'] = None
 
-            mod_calcs.loc['Horas trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
-            mod_calcs.loc['FTE'] = modifications.loc['Horas reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
+            modifications.loc[['Salário','SS']] = st.data_editor(
+                sheet.loc[['Salário', 'SS'], contract_range],
+                key = f"{person}_mon_sheet_{st.session_state.key}",
+                column_config=float_columns,
+                use_container_width=True
+            )
+            
+            modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
+            modifications.loc['FTE'] = modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])
 
-            if saved_clicked:
-                project.sheets[member].work.iloc[0:5] = modifications.copy()
-                project.sheets[member].work.iloc[5:] = mod_calcs.copy()
-
-            st.dataframe(mod_calcs)
-
-            all_wps = pd.DataFrame(columns= ['WP', 'TRL'].append(modifications.columns))
-            for wp, df in sheet.wps.items():
-                    
-                st.title(wp)
+            if saved_button := st.button("Apply Changes"):
+                sheet.update(modifications)
+                sheet= sheet.reset_index()
+                sheet = sheet.set_index(['person','indicator'])
                 
-                wp_modifications = st.data_editor(
-                    df,
-                    key = f"{member}_{wp}",
-                    disabled=["TRL"],
-                    use_container_width=True
+                st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].set_index(['person','indicator'])
+                st.session_state.project["man_sheet"].update(sheet)
+                st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].reset_index()    
+
+            if st.button("Discard Changes", key="sheet_discard"):
+                st.session_state.key = (st.session_state.key + 1) % 2
+                st.rerun()
+
+            st.dataframe(
+                modifications.loc[['Horas Trabalhadas', 'FTE']],
+                use_container_width=True
+            )
+
+            person_work = planned_work[planned_work['person'] == person]
+
+            for wp in planned_work[planned_work['person'] == person]['wp'].unique():
+
+                wp_work = person_work[person_work['wp'] == wp].drop(columns=['trl', 'wp', 'person']).set_index('activity').sort_index()
+                
+                wp_sheet_modifications = st.data_editor(
+                    wp_work,
+                    key = f"{person}_work_{wp}_{st.session_state.key}",
+                    column_config={
+                        "activity":st.column_config.TextColumn(
+                            wp
+                        )
+                    }
                 )
 
-                if saved_clicked:
-                    project.sheets[member].wps[wp] = wp_modifications
+                person_work = person_work.set_index('activity')
+                person_work.update(wp_sheet_modifications, overwrite=True)
+                person_work = person_work.reset_index()
 
-                to_wp = wp_modifications.copy()
-                to_wp.insert(0, 'WP', wp)
-                all_wps = pd.concat([all_wps, to_wp])
+            if saved_button:
+                st.session_state.project['planned_work'] = st.session_state.project['planned_work'][st.session_state.project['planned_work']['person'] != person]
+                st.session_state.project['planned_work'] = pd.concat([st.session_state.project['planned_work'], person_work])
+                st.session_state.projects.loc[st.session_state.projects['name'] == st.session_state.project_name, ['man_sheet', 'planned_work']] = st.session_state.project.loc[['man_sheet', 'planned_work']]
+
+            horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
+
+            float_columns = person_work.select_dtypes(include=['float'])
+            sum_wp = person_work[float_columns.columns].sum()
+
+            person_work[float_columns.columns] = ((person_work[float_columns.columns] / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+            #if saved_button:
+            #    st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'][st.session_state.project['time_allocation']['person'] != person]
+            #    st.session_state.project['time_allocation'] = pd.concat([st.session_state.project['time_allocation'], person_work])
+
+            cost_activity = person_work.copy()
+
+            cost_activity[float_columns.columns] = person_work[float_columns.columns] * (((modifications.loc['Salário'] * 14) / 11)*(1+(modifications.loc['SS']/100)))
+            #if saved_button:
+            #    st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'][st.session_state.project['cost_allocation']['person'] != person]
+            #    st.session_state.project['cost_allocation'] = pd.concat([st.session_state.project['cost_allocation'], cost_activity])
+            #    st.rerun()
             
-            if not all_wps.empty:
-                wp_sum = all_wps.drop('TRL', axis=1).groupby(['WP']).sum().reset_index()
-                st.dataframe(wp_sum.set_index('WP'))
+            st.dataframe(person_work)
+            st.dataframe(cost_activity)
+            st.dataframe(person_work.drop(columns=['activity', 'person']).groupby(['wp', 'trl']).sum())
 
-                total_wp_sum = all_wps.iloc[:, 2:].sum(axis=0)
-                total_wp_sum[total_wp_sum == 0] = np.nan
 
-                horas_reais = modifications.loc['Horas reais']
-                jornada_diaria = modifications.loc['Jornada Diária']
-                dias_uteis = modifications.loc['Dias Úteis']
-
-                all_wps.iloc[:,2:] = (
-                    all_wps.iloc[:, 2:].div(total_wp_sum, axis=1)
-                    .mul(horas_reais)
-                    .div(jornada_diaria.mul(dias_uteis))
-                )
-
-                # Replace inf and nan with 0
-                all_wps.replace([np.inf, -np.inf, np.nan], 0, inplace=True)
-
-                if saved_clicked:
-                    project.sheets[member].computations = all_wps
-                    st.rerun()
-                    
-                st.title("Afetação Atividade")
-                st.dataframe(all_wps.iloc[:,2:])
-                
-                group_wp = all_wps.groupby(['WP','TRL']).sum().reset_index()
-
-                st.title("Afetação WP/TRL")
-                st.dataframe(group_wp.set_index(['WP', 'TRL']))
-
-            
-    with computation_tab:
-
-        project = st.session_state.project
-
-        fte = pd.DataFrame(0.0, columns=project.get_date_column(), index=["FTE's Globais", "FTE's Femininos", "FTE's Masculinos"])
+    with tab_imputations:
         
-        project = st.session_state.project
-        for person in project.team.loc[:, ['Nome', 'Genero']].itertuples(index=False):
-            
-            person_sheet = project.sheets[person.Nome]
-            gender_index = 1 if person.Genero == 'F' else 2
+        if not st.session_state.project['man_sheet'].empty:
+            ftes = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'FTE']
 
-            fte.iloc[0] = fte.iloc[0] +  person_sheet.work.loc['FTE']
-            fte.iloc[gender_index] = fte.iloc[gender_index] +  person_sheet.work.loc['FTE']
-
-        st.dataframe(fte)
-        
-        person_total_hours = pd.DataFrame(columns=["Person","WP"]+project.get_date_column())
-        person_wp_trl_hours = pd.DataFrame(columns=["Person","WP","TRL"]+project.get_date_column())
-        for person in project.team.itertuples(index=False):
-
-            person_sheet = project.sheets[person.Nome]
-
-            if not (person_afetacao := person_sheet.computations).empty :
-                
-                #person_total_hours.loc[len(person_total_hours)] =  
-                by_wp = person_afetacao.drop('TRL', axis=1).groupby('WP').sum().reset_index()
-                by_wp.iloc[:,1:] = by_wp.iloc[:,1:] * pd.to_numeric(person_sheet.work.loc['Horas reais'])
-                by_wp.insert(0,'Person',person.Nome)
-
-                by_wp_trl = person_afetacao.groupby(['WP', 'TRL']).sum().reset_index()
-                
-                by_wp_trl.iloc[:,2:] = by_wp_trl.iloc[:,2:] * pd.to_numeric(person_sheet.work.loc['Horas reais'])
-                by_wp_trl.insert(0,'Person',person.Nome)
-                
-                
-                person_total_hours = pd.concat([person_total_hours, by_wp])
-                person_wp_trl_hours = pd.concat([person_wp_trl_hours, by_wp_trl])
-        
-        st.dataframe(person_total_hours.drop('Person', axis=1).groupby('WP').sum().reset_index())
-
-        
-        st.dataframe(person_total_hours, hide_index=True)
-        st.dataframe(person_wp_trl_hours)
-                
-
-
-                
-                
+            ftes = pd.merge(st.session_state.contracts.loc[:,['person','gender']], ftes, on='person', how='left')
             
 
+            st.dataframe(ftes.drop(columns=['person','indicator']).groupby('gender').sum())
 
 
+            float_columns = person_work.select_dtypes(include=['float'])
+            sum_wp = st.session_state.project["planned_work"][float_columns.columns].sum()
 
+            real_hours = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Horas Reais']
+            hours_allocation = st.session_state.project['planned_work'].drop(columns=['activity']).groupby(['wp', 'trl', 'person']).sum() / sum_wp
+            
+            for row in hours_allocation.itertuples():
+                hours_allocation.loc[row.Index] = hours_allocation.loc[row.Index] * real_hours[real_hours['person'] == row.Index[2]].iloc[0, 2:]
+
+            st.dataframe(hours_allocation.groupby(level=[2,0]).sum())
+            st.dataframe(hours_allocation.groupby(level=[2,1]).sum())
+            st.dataframe(hours_allocation.groupby(level=0).sum())
+
+    with tab_costs:
+        pass
+        #cost_allocation = st.session_state.project['cost_allocation']
+        #cost_allocation = cost_allocation.drop(columns=['person', 'activity']).groupby(['wp', 'trl']).sum() 
+
+        #result = cost_allocation.groupby(level='wp').sum()
+        #result['trl'] = 'total'
+        #result = result.reset_index()
+        #result = result.set_index(['wp', 'trl'])
         
-        
+        #cost_allocation = pd.concat([cost_allocation, result])
+        #st.dataframe(cost_allocation)
+
+       
     
 if __name__ == "__main__":
     main()

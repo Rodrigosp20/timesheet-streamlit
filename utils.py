@@ -1,54 +1,72 @@
+from datetime import timedelta
 import pandas as pd
 import streamlit as st
 import numpy as np
+from itertools import product
 
 def date_range(start, end):
     months_range = pd.date_range(start=start, end=end, freq='MS')
     return [month.strftime('%b/%y') for month in months_range]
 
+def reset_key():
+    st.session_state.key = (st.session_state.key + 1) % 2
 
-def update_timeline(name, data):
-    st.session_state.timelines = st.session_state.timelines[st.session_state.timelines['project'] != name]
-    st.session_state.timelines = pd.concat([st.session_state.timelines, data], ignore_index=True)
+
+def create_project(name, start, end):
+        
+    if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
+        return st.error("Projeto já existe")
+
+    st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
+    reset_key()
+    st.rerun()
+
+def update_project_dates(project, start, end):
+    if start == project.loc['start_date'] and end == project.loc['end_date']:
+        return st.error("Same dATES")
+
+def update_timeline(project, data, executed):
+    st.session_state.activities = st.session_state.activities.query('project != @project["name"]')
+    st.session_state.activities = pd.concat([st.session_state.activities, data])
+    st.session_state.projects.query('name == @project["name"]').loc[0, 'executed'] = executed
+
+    contracts = st.session_state.contracts.query('project == @project["name"]')
+
+    for contract in contracts.itertuples():
+        
+        contract_range = pd.date_range(start=contract.start_date, end=contract.end_date, freq='MS')
+        st.session_state.planned_work = st.session_state.planned_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract.start_date and date <= @contract.start_date)')
+        
+        activities_dates_combinations = list(product(data["activity"], contract_range))
+        st.session_state.planned_work = pd.concat([st.session_state.planned_work, pd.DataFrame({"person": contract.person, "project": project['name'], "activity": [item[0] for item in activities_dates_combinations], "date": [item[1] for item in activities_dates_combinations], "hours":0})])
+
+    st.session_state.planned_work = st.session_state.planned_work.drop_duplicates(subset=["person", "activity", "date"])
+    st.session_state.planned_work = st.session_state.planned_work.query('activity in @data["activity"]')
     
-    st.session_state.projects.iloc[st.session_state.projects['name'] == st.session_state.project_name] = st.session_state.project
+def update_contracts(project, data):
+    st.session_state.contracts = st.session_state.contracts.query('project != @project["name"]')
+    data['project'] = project['name']
+    st.session_state.contracts = pd.concat([st.session_state.contracts, data])
 
-def update_contracts(name, data):
-    st.session_state.contracts = st.session_state.contracts[st.session_state.contracts['project'] != name]
-    st.session_state.contracts = pd.concat([st.session_state.contracts, data], ignore_index=True)
+    activities = st.session_state.activities.query('project == @project["name"]')
+    
+    for contract in data.itertuples():
+        contract_range = pd.date_range(start=contract.start_date, end=contract.end_date, freq='MS')
 
-    #Dropping all sheets for now
-    st.session_state.project['man_sheet'] = st.session_state.project['man_sheet'].drop(st.session_state.project['man_sheet'].index)
-    st.session_state.project['planned_work'] = st.session_state.project['planned_work'].drop(st.session_state.project['planned_work'].index)
-    st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'].drop(st.session_state.project['time_allocation'].index)
-    st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'].drop(st.session_state.project['cost_allocation'].index)
-    for person in data['person'].to_list():
-        create_sheet(person, name)
-   
-    st.session_state.projects.iloc[st.session_state.projects['name'] == st.session_state.project_name] = st.session_state.project    
+        st.session_state.sheets = pd.concat([st.session_state.sheets, pd.DataFrame({"person": contract.person, "date": contract_range, "Jornada Diária": 8, "Dias Úteis":20, "Faltas": 0, "Férias": 0, "Salário": 0, "SS": 23.75})])
+
+        st.session_state.real_work = st.session_state.real_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract.start_date and date <= @contract.start_date)')
+        st.session_state.planned_work = st.session_state.planned_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract.start_date and date <= @contract.start_date)')
+
+        st.session_state.real_work = pd.concat([st.session_state.real_work, pd.DataFrame({"person": contract.person, "project":project["name"], "date": contract_range, "hours":0})])
+        
+        activities_dates_combinations = list(product(activities['activity'], contract_range))
+        st.session_state.planned_work = pd.concat([st.session_state.planned_work, pd.DataFrame({"person": contract.person, "project":project["name"], "activity":[item[0] for item in activities_dates_combinations], "date": [item[1] for item in activities_dates_combinations], "hours":0})])
+
+    st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person", "date"])
+    st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person", "project", "date"])    
+    st.session_state.real_work = st.session_state.real_work.query('(project != @project["name"]) or (person in @data["person"])')    
+    st.session_state.planned_work = st.session_state.planned_work.drop_duplicates(subset=["person", "project", "activity", "date"])
+    st.session_state.planned_work = st.session_state.planned_work.query('(project != @project["name"]) or (person in @data["person"])')
  
-def create_sheet(person, name):
-    man_sheet = st.session_state.project['man_sheet']
-    planned_work = st.session_state.project['planned_work']
-    cost_allocation = st.session_state.project['cost_allocation']
-    time_allocation = st.session_state.project['time_allocation']
-    
 
-    new_sheet = pd.DataFrame({'person':person, 'indicator':['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Horas Reais', 'Salário', 'SS', 'Horas Trabalhadas',  'FTE']})
-    
-    st.session_state.project['man_sheet'] = pd.concat([man_sheet, new_sheet], ignore_index=True)
-    st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Jornada Diária'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Jornada Diária'].fillna(8)
-    st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Dias Úteis'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Dias Úteis'].fillna(22)
-    st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'SS'] =  st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'SS'].fillna(23.75)
-    st.session_state.project['man_sheet'] = st.session_state.project['man_sheet'].fillna(0)
-    
-    timelines = st.session_state.timelines
-    project_timeline = timelines[timelines['project'] == name]
-    
-    new_work= pd.DataFrame({'person': person, 'wp':project_timeline['wp'], 'activity':project_timeline['activity'], 'trl':project_timeline['trl']})
-    st.session_state.project['planned_work'] = pd.concat([planned_work, new_work], ignore_index=True)
-    st.session_state.project['planned_work'] = st.session_state.project['planned_work'].fillna(0)
-    st.session_state.project['cost_allocation'] = pd.concat([cost_allocation, new_work], ignore_index=True)
-    st.session_state.project['cost_allocation'] = st.session_state.project['cost_allocation'].fillna(0)
-    st.session_state.project['time_allocation'] = pd.concat([time_allocation, new_work], ignore_index=True)
-    st.session_state.project['time_allocation'] = st.session_state.project['time_allocation'].fillna(0)
