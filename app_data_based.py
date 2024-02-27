@@ -7,7 +7,6 @@ import numpy as np
 import plotly.express as px
 import pickle
 from utils import *
-from st_aggrid import AgGrid
 
 projects_schema = {
     "name": "string",
@@ -138,7 +137,7 @@ def main():
 
     st.sidebar.divider()
 
-    if not (project := st.sidebar.selectbox('Select a Project', options = [""] + st.session_state.projects['name'].to_list(), placeholder="Escolhe um projeto")):
+    if not (project := st.sidebar.selectbox('Select a Project', options = [""] + st.session_state.projects['name'].to_list(), placeholder="Escolhe um projeto", on_change=reset_key)):
         st.title("Criar Projeto")
 
         project_name = st.text_input("Nome do projeto", key=f"project_name_{st.session_state.key}")
@@ -167,7 +166,6 @@ def main():
             timeline = st.session_state.activities.query("project == @project['name']")
             timeline = timeline.sort_values(by=['wp', 'activity', "start_date"])
 
-            
             result = timeline.groupby('wp').agg({'start_date': 'min', 'end_date': 'max', 'real_start_date': 'min', 'real_end_date': 'max'})
             
             gantt_data = []
@@ -233,7 +231,37 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.write('<p style="text-align: center;">Sem Dados Disponíveis</p>', unsafe_allow_html=True)
+            
+            wps = st_tags(
+                label='Workpackages do Projeto',
+                text='Inserir',
+                value=list(timeline['wp'].unique()),
+                suggestions=list(timeline['wp'].unique()),
+                key=f"wps_{st.session_state.key}"
+            )
 
+            activities = timeline.query('wp in @wps')
+            activities = activities.set_index('activity')
+            
+            for wp in wps:
+
+                with st.expander(wp):
+                    wp_activities = st_tags(
+                        label=f'Atividades do {wp}',
+                        text='Inserir',
+                        value=list(timeline.query('wp == @wp')['activity']),
+                        suggestions=list(timeline.query('wp == @wp')['activity']),
+                        key=f"act_{wp}_{st.session_state.key}"
+                    )
+
+                    for act in wp_activities:
+                        st.text_input("Nome", value=act, disabled=True)
+                        activities.loc[act, 'trl'] = st.selectbox("TRL", options=['TRL 3-4','TRL 5-9'], key=f"trl_{wp}_{act}_{st.session_state.key}", index= 0 if act in activities.index and activities.loc[act, 'trl'] == 'TRL 3-4'  else 1)
+                        activities.loc[act, 'start_date'] = st.date_input("Data de Inicio [Planeada]", value= activities.loc[act, 'start_date'] if act in activities.index else project["start_date"], key=f"start_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
+                        activities.loc[act, 'end_date'] = st.date_input("Data de Termino [Planeada]", value= activities.loc[act, 'end_date'] if act in activities.index else project["end_date"], key=f"end_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
+                        activities.loc[act, 'real_start_date'] = st.date_input("Data de Inicio [Real]", value= activities.loc[act, 'real_start_date'] if act in activities.index else project["start_date"], key=f"real_start_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
+                        activities.loc[act, 'real_end_date'] = st.date_input("Data de Termino [Real]", value= activities.loc[act, 'real_end_date'] if act in activities.index else project["end_date"], key=f"real_end_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
+                       
             wps = st.data_editor(
                 np.array(timeline['wp'].unique()),
                 column_config={
@@ -308,17 +336,19 @@ def main():
                 else:                    
                     update_timeline(project, timeline_mod, executed_date)
                     st.rerun()
+            
+            if st.button("Discard Changes", key="discard_timeline"):
+                reset_key()
+                st.rerun()
        
         with tab_team:
-            name = st.session_state.project_name
             contracts = st.session_state.contracts
-
-            project_contracts = contracts[contracts['project'] == name]
-
+            project_contracts = st.session_state.contracts.query('project == @project["name"]')
+            
             members = st_tags(
                 label='Membros do projeto',
                 text='Pesquisar',
-                value=list(contracts['person']),
+                value=list(project_contracts['person']),
                 suggestions=list(contracts['person'].unique()),
                 key=f"members_{st.session_state.key}"
             )
@@ -445,36 +475,38 @@ def main():
                 st.dataframe(
                     df.fillna(0)
                 )
-                
-                if saved_button:
-                    wp_sheet = wp_sheet.reset_index(names='activity')
-                    wp_sheet = wp_sheet.melt(id_vars='activity', var_name='date', value_name='hours')
-                    wp_sheet['date'] = pd.to_datetime(wp_sheet['date'], format='%b/%y')
-                    wp_sheet['person'] = person
-                    wp_sheet['project'] = project['name']
 
-                    st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
-                    st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
-                    st.rerun()
+                if not wp_sheet.empty:
 
-                horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
-                sum_wp = wp_sheet.sum()
-                
-                sum_wp= sum_wp.replace(0, np.nan)
-                horas_trabalhaveis = horas_trabalhaveis.replace(0, np.nan)
+                    if saved_button:
+                        wp_sheet = wp_sheet.reset_index(names='activity')
+                        wp_sheet = wp_sheet.melt(id_vars='activity', var_name='date', value_name='hours')
+                        wp_sheet['date'] = pd.to_datetime(wp_sheet['date'], format='%b/%y')
+                        wp_sheet['person'] = person
+                        wp_sheet['project'] = project['name']
 
-                wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
-                
-                st.dataframe(wp_sheet)
+                        st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                        st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
+                        st.rerun()
 
-                cost_wp = wp_sheet * (((modifications.loc['Salário'] * 14) / 11)* (1+(modifications.loc['SS']/100) ))
-  
-                st.dataframe(cost_wp)
-                
-                wp_sheet = wp_sheet.reset_index(names="activity")
-                wp_sheet = wp_sheet.merge(activities[['activity', 'wp', 'trl']], on="activity", how="left")
+                    horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
+                    sum_wp = wp_sheet.sum()
+                    
+                    sum_wp= sum_wp.replace(0, np.nan)
+                    horas_trabalhaveis = horas_trabalhaveis.replace(0, np.nan)
 
-                st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum())
+                    wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+                    
+                    st.dataframe(wp_sheet)
+
+                    cost_wp = wp_sheet * (((modifications.loc['Salário'] * 14) / 11)* (1+(modifications.loc['SS']/100) ))
+    
+                    st.dataframe(cost_wp)
+                    
+                    wp_sheet = wp_sheet.reset_index(names="activity")
+                    wp_sheet = wp_sheet.merge(activities[['activity', 'wp', 'trl']], on="activity", how="left")
+
+                    st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum())
 
 
 
@@ -482,55 +514,54 @@ def main():
             
             work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
             
-            ftes = work.merge(st.session_state.contracts[["person", "project", "gender"]], on=["person", "project"])
-            ftes = ftes.merge(st.session_state.sheets[["person", "date", "Jornada Diária", "Dias Úteis", "Férias"]], on=["person", "date"])
+            if not work.empty:
+                ftes = work.merge(st.session_state.contracts[["person", "project", "gender"]], on=["person", "project"])
+                ftes = ftes.merge(st.session_state.sheets[["person", "date", "Jornada Diária", "Dias Úteis", "Férias"]], on=["person", "date"])
 
-            ftes['FTE'] = (ftes['hours'] / (ftes['Jornada Diária'] * ftes['Dias Úteis'] - ftes['Férias']).replace(0, np.nan)).fillna(0)
-            ftes = ftes.pivot_table(index='gender', columns='date', values='FTE', aggfunc='sum')
-            ftes.columns = ftes.columns.strftime('%b/%y')
-        
-            st.dataframe(ftes)
+                ftes['FTE'] = (ftes['hours'] / (ftes['Jornada Diária'] * ftes['Dias Úteis'] - ftes['Férias']).replace(0, np.nan)).fillna(0)
+                ftes = ftes.pivot_table(index='gender', columns='date', values='FTE', aggfunc='sum')
+                ftes.columns = ftes.columns.strftime('%b/%y')
+            
+                st.dataframe(ftes)
 
-            planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
-            planned_work = planned_work.pivot_table(index=['person', 'project'], columns='date', values='hours')
-            print(planned_work)
-            """
-                if not st.session_state.project['man_sheet'].empty:
-                ftes = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'FTE']
-
-                ftes = pd.merge(st.session_state.contracts.loc[:,['person','gender']], ftes, on='person', how='left')
+                activities = st.session_state.activities.query('project == @project["name"]')
+                planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+                planned_work = planned_work.merge(activities[["wp", "activity", "trl"]], on="activity", how="left")
                 
+                work= work.pivot_table(index="person", columns="date", values="hours")
+                planned_work = planned_work.pivot_table(index=['person', "wp", "trl"], columns='date', values='hours', aggfunc="sum")
+                sum_wp = planned_work.groupby(level="person").sum()
 
-                st.dataframe(ftes.drop(columns=['person','indicator']).groupby('gender').sum())
-
-
-                float_columns = person_work.select_dtypes(include=['float'])
-                sum_wp = st.session_state.project["planned_work"][float_columns.columns].sum()
-
-                real_hours = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'Horas Reais']
-                hours_allocation = st.session_state.project['planned_work'].drop(columns=['activity']).groupby(['wp', 'trl', 'person']).sum() / sum_wp
-                
-                for row in hours_allocation.itertuples():
-                    hours_allocation.loc[row.Index] = hours_allocation.loc[row.Index] * real_hours[real_hours['person'] == row.Index[2]].iloc[0, 2:]
-
-                st.dataframe(hours_allocation.groupby(level=[2,0]).sum())
-                st.dataframe(hours_allocation.groupby(level=[2,1]).sum())
-                st.dataframe(hours_allocation.groupby(level=0).sum())
-            """
+                affection = planned_work.div(sum_wp.replace(0,np.nan)).mul(work).fillna(0)      
+                affection.columns = affection.columns.strftime('%b/%y')
+                #st.dataframe(affection)
+            
+                st.dataframe(affection.groupby(level=[2,0]).sum())
+                st.dataframe(affection.groupby(level=[2,1]).sum())
+                st.dataframe(affection.groupby(level=0).sum())
+            
 
         with tab_costs:
-            pass
-            #cost_allocation = st.session_state.project['cost_allocation']
-            #cost_allocation = cost_allocation.drop(columns=['person', 'activity']).groupby(['wp', 'trl']).sum() 
+            work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+            planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+            sheet = st.session_state.sheets.query('person in @work["person"].unique() and date >= @project["start_date"] and date <= @project["end_date"]')[["person", "date", "Jornada Diária", "Dias Úteis", "SS", "Salário"]]
 
-            #result = cost_allocation.groupby(level='wp').sum()
-            #result['trl'] = 'total'
-            #result = result.reset_index()
-            #result = result.set_index(['wp', 'trl'])
+            if not planned_work.empty:
+                planned_work = planned_work.merge(activities[["wp", "activity", "trl"]], on="activity", how="left")
+                
+                work= work.pivot_table(index="person", columns="date", values="hours")
+                planned_work = planned_work.pivot_table(index=['person', "wp", "trl"], columns='date', values='hours', aggfunc="sum")
+                sum_wp = planned_work.groupby(level="person").sum()
+
+                sheet['trabalhaveis'] = sheet['Jornada Diária'] * sheet['Dias Úteis']
+                sheet['sal'] = (sheet['Salário'] *14/ 11) * (1 + sheet["SS"]/100)
+                sheet = sheet.pivot_table(index="person", columns="date", values=["trabalhaveis", "sal"])
+
+                affection = planned_work.div(sum_wp.replace(0, np.nan)).mul(work).div(sheet['trabalhaveis'].replace(0, np.nan)).fillna(0)
+
+                costs = affection.mul(sheet['sal'])
+                st.dataframe(costs)
             
-            #cost_allocation = pd.concat([cost_allocation, result])
-            #st.dataframe(cost_allocation)
-
        
     
 if __name__ == "__main__":
