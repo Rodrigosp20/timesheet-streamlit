@@ -7,6 +7,7 @@ import numpy as np
 import plotly.express as px
 import pickle
 from utils import *
+from st_aggrid import AgGrid
 
 projects_schema = {
     "name": "string",
@@ -43,7 +44,8 @@ sheets_schema = {
     "Faltas" : "float64",
     "Férias" : "float64",
     "Salário" : "float64",
-    "SS" : "float64"
+    "SS" : "float64",
+    "Custo Aproximado" : "float64",
 }
 
 real_work_schema = {
@@ -354,42 +356,8 @@ def main():
                 
                 contract = contracts[contracts['person'] == person].iloc[0]
 
-                contract_range = pd.date_range(start=contract["start_date"], end=contract["end_date"], freq='MS')
-
-                #columns_config = {date:st.column_config.NumberColumn(date,disabled=True) for date in project_range if date not in contract_range}
-                
-                hours_columns = {
-                    date: st.column_config.NumberColumn(
-                        date,
-                        default=0,
-                        min_value=0,
-                        format="%f h"
-                    ) for date in contract_range
-                }
-
-                money_columns = {
-                    date: st.column_config.NumberColumn(
-                        date,
-                        min_value=0,
-                        format="%.2f €"
-                    ) for date in contract_range
-                }
-                
-                float_columns = {
-                    date: st.column_config.NumberColumn(
-                        date,
-                        min_value=0,
-                        format="%.2f"
-                    ) for date in contract_range
-                }
-
-                percentage_columns = {
-                    date: st.column_config.NumberColumn(
-                        date,
-                        min_value=0,
-                        format="%.2f %"
-                    ) for date in contract_range
-                }
+                contract_range = date_range(contract["start_date"],contract["end_date"])
+                columns_config = {date : st.column_config.NumberColumn(date, format="%.2f", disabled=True) for date in contract_range }
                 
                 activities = st.session_state.activities.query('project == @project["name"]')
                 sheet = st.session_state.sheets.query('person == @person and date >= @contract["start_date"] and date <= @contract["end_date"]')
@@ -409,6 +377,7 @@ def main():
 
                 modifications.loc['Salário'] = None
                 modifications.loc['SS'] = None
+                
 
                 modifications.loc[['Salário','SS']] = st.data_editor(
                     sheet.loc[['Salário', 'SS']],
@@ -416,25 +385,32 @@ def main():
                     use_container_width=True
                 )
                 
-                modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Faltas'] - modifications.loc['Férias']
+                modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
                 modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])).fillna(0)
+                modifications.loc['Custo Aproximado'] =  ( modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan) * modifications.loc['Salário']*14 / 11 * (1 + modifications.loc['SS'] / 100)).fillna(0)
 
                 if saved_button := st.button("Apply Changes"):
-                    sheet.update(modifications)
-                    sheet= sheet.reset_index()
-                    sheet = sheet.set_index(['person','indicator'])
+                    to_update = modifications.transpose()
+                    to_update = to_update.reset_index('date')
+                    to_update['date'] = pd.to_datetime(to_update['date'], format='%b/%y')
+                    to_update['person'] = person
                     
-                    st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].set_index(['person','indicator'])
-                    st.session_state.project["man_sheet"].update(sheet)
-                    st.session_state.project["man_sheet"] = st.session_state.project["man_sheet"].reset_index()    
+                    st.session_state.sheets = st.session_state.sheets.query('(person != @person) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                    st.session_state.sheets = pd.concat([st.session_state.sheets, to_update[['person', 'date', 'Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Salário', 'SS', 'Custo Aproximado']]])
+
+                    to_update['hours'] = to_update['Horas Reais']
+                    to_update['project'] = project['name']
+                    st.session_state.real_work = st.session_state.real_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                    st.session_state.real_work = pd.concat([st.session_state.real_work, to_update[['person', 'project', 'date', 'hours']]])
 
                 if st.button("Discard Changes", key="sheet_discard"):
                     st.session_state.key = (st.session_state.key + 1) % 2
                     st.rerun()
 
                 st.dataframe(
-                    modifications.loc[['Horas Trabalhadas', 'FTE']],
-                    use_container_width=True
+                    modifications.loc[['Horas Trabalhadas', 'FTE', 'Custo Aproximado']],
+                    use_container_width=True,
+                    column_config=columns_config
                 )
 
                 planned_work = planned_work.merge(activities[['activity', "wp", 'trl']], on="activity", how="left")
@@ -447,7 +423,7 @@ def main():
                     wp_work = planned_work[planned_work['wp'] == wp]
                     wp_work = wp_work.pivot(index="activity", columns="date", values="hours")
                     wp_work.columns = wp_work.columns.strftime('%b/%y')
-                    
+
                     wp_sheet_modifications = st.data_editor(
                         wp_work,
                         key = f"{person}_work_{wp}_{st.session_state.key}",
@@ -460,22 +436,26 @@ def main():
 
                     wp_sheet = pd.concat([wp_sheet, wp_sheet_modifications])
 
-                
-                ohter_activities = real_work.query('project != @project["name"]')
-                st.data_editor(
-                    ohter_activities
+                other_activities = real_work.query('project != @project["name"] and date >= @contract["start_date"] and date <= @contract["end_date"]')[['date','hours', 'project']]
+                other_activities['date'] = other_activities['date'].apply(lambda x: pd.to_datetime(x).strftime('%b/%y'))
+                other_activities = other_activities.pivot_table(index='project', columns='date', values='hours')
+                df = pd.concat([pd.DataFrame(columns=modifications.columns), other_activities])
+                df.loc['Outras Atividades'] = modifications.loc['Horas Trabalhadas'] - df.sum(axis=0) - modifications.loc['Horas Reais'].fillna(0)
+
+                st.dataframe(
+                    df.fillna(0)
                 )
-                
                 
                 if saved_button:
                     wp_sheet = wp_sheet.reset_index(names='activity')
                     wp_sheet = wp_sheet.melt(id_vars='activity', var_name='date', value_name='hours')
-                    wp_sheet = wp_sheet.merge(activities[['activity', "wp", 'trl']], on="activity", how="left")
+                    wp_sheet['date'] = pd.to_datetime(wp_sheet['date'], format='%b/%y')
+                    wp_sheet['person'] = person
+                    wp_sheet['project'] = project['name']
 
-                    #st.session_state.project['planned_work'] = st.session_state.project['planned_work'][st.session_state.project['planned_work']['person'] != person]
-                    #st.session_state.project['planned_work'] = pd.concat([st.session_state.project['planned_work'], person_work])
-                    #st.session_state.projects.loc[st.session_state.projects['name'] == st.session_state.project_name, ['man_sheet', 'planned_work']] = st.session_state.project.loc[['man_sheet', 'planned_work']]
-
+                    st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                    st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
+                    st.rerun()
 
                 horas_trabalhaveis = (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).fillna(0)
                 sum_wp = wp_sheet.sum()
@@ -497,8 +477,23 @@ def main():
                 st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum())
 
 
+
         with tab_imputations:
             
+            work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+            
+            ftes = work.merge(st.session_state.contracts[["person", "project", "gender"]], on=["person", "project"])
+            ftes = ftes.merge(st.session_state.sheets[["person", "date", "Jornada Diária", "Dias Úteis", "Férias"]], on=["person", "date"])
+
+            ftes['FTE'] = (ftes['hours'] / (ftes['Jornada Diária'] * ftes['Dias Úteis'] - ftes['Férias']).replace(0, np.nan)).fillna(0)
+            ftes = ftes.pivot_table(index='gender', columns='date', values='FTE', aggfunc='sum')
+            ftes.columns = ftes.columns.strftime('%b/%y')
+        
+            st.dataframe(ftes)
+
+            planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+            planned_work = planned_work.pivot_table(index=['person', 'project'], columns='date', values='hours')
+            print(planned_work)
             """
                 if not st.session_state.project['man_sheet'].empty:
                 ftes = st.session_state.project['man_sheet'].loc[st.session_state.project['man_sheet']['indicator'] == 'FTE']

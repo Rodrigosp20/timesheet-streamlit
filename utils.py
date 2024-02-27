@@ -4,6 +4,7 @@ import streamlit as st
 import numpy as np
 from itertools import product
 
+
 def date_range(start, end):
     months_range = pd.date_range(start=start, end=end, freq='MS')
     return [month.strftime('%b/%y') for month in months_range]
@@ -41,7 +42,7 @@ def update_timeline(project, data, executed):
         st.session_state.planned_work = pd.concat([st.session_state.planned_work, pd.DataFrame({"person": contract.person, "project": project['name'], "activity": [item[0] for item in activities_dates_combinations], "date": [item[1] for item in activities_dates_combinations], "hours":0})])
 
     st.session_state.planned_work = st.session_state.planned_work.drop_duplicates(subset=["person", "activity", "date"])
-    st.session_state.planned_work = st.session_state.planned_work.query('activity in @data["activity"]')
+    st.session_state.planned_work = st.session_state.planned_work.query('(project != @project["name"] or (activity in @data["activity"])')
     
 def update_contracts(project, data):
     st.session_state.contracts = st.session_state.contracts.query('project != @project["name"]')
