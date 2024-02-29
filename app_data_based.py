@@ -243,99 +243,67 @@ def main():
             activities = timeline.query('wp in @wps')
             activities = activities.set_index('activity')
             
+            to_update = pd.DataFrame(columns=activities.columns)
             for wp in wps:
 
-                with st.expander(wp):
-                    wp_activities = st_tags(
-                        label=f'Atividades do {wp}',
-                        text='Inserir',
-                        value=list(timeline.query('wp == @wp')['activity']),
-                        suggestions=list(timeline.query('wp == @wp')['activity']),
-                        key=f"act_{wp}_{st.session_state.key}"
-                    )
+                with st.expander(wp):                    
+                    wp_df = activities.query('wp == @wp')
 
-                    for act in wp_activities:
-                        st.text_input("Nome", value=act, disabled=True)
-                        activities.loc[act, 'trl'] = st.selectbox("TRL", options=['TRL 3-4','TRL 5-9'], key=f"trl_{wp}_{act}_{st.session_state.key}", index= 0 if act in activities.index and activities.loc[act, 'trl'] == 'TRL 3-4'  else 1)
-                        activities.loc[act, 'start_date'] = st.date_input("Data de Inicio [Planeada]", value= activities.loc[act, 'start_date'] if act in activities.index else project["start_date"], key=f"start_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
-                        activities.loc[act, 'end_date'] = st.date_input("Data de Termino [Planeada]", value= activities.loc[act, 'end_date'] if act in activities.index else project["end_date"], key=f"end_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
-                        activities.loc[act, 'real_start_date'] = st.date_input("Data de Inicio [Real]", value= activities.loc[act, 'real_start_date'] if act in activities.index else project["start_date"], key=f"real_start_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
-                        activities.loc[act, 'real_end_date'] = st.date_input("Data de Termino [Real]", value= activities.loc[act, 'real_end_date'] if act in activities.index else project["end_date"], key=f"real_end_date_{wp}_{act}_{st.session_state.key}", format="DD/MM/YYYY")
-                       
-            wps = st.data_editor(
-                np.array(timeline['wp'].unique()),
-                column_config={
-                    "value": st.column_config.TextColumn(
-                        "WP",
-                        required = True,
-                        validate=".+",
-                        default="WP"
+                    wp_acts = st.data_editor(
+                        wp_df,
+                        column_order=["activity", "trl", "start_date", "end_date", "real_start_date", "real_end_date"],
+                        column_config={
+                            "activity": st.column_config.TextColumn(
+                                "Atividade",
+                                required=True,
+                                default="A"
+                            ),
+                            "trl": st.column_config.SelectboxColumn(
+                                "TRL",
+                                options=['TRL 3-4', 'TRL 5-9'],
+                                required=True
+                            ),
+                            "start_date": st.column_config.DateColumn(
+                                "Data de Inicio [Planeada]",
+                                min_value=project["start_date"],
+                                default=project["start_date"],
+                                format="DD/MM/YYYY",
+                                required=True
+                            ),
+                            "end_date": st.column_config.DateColumn(
+                                "Data de Termino [Planeada]",
+                                max_value=project["end_date"],
+                                default=project["end_date"],
+                                format="DD/MM/YYYY",
+                                required=True
+                            ),
+                            "real_start_date": st.column_config.DateColumn(
+                                "Data de Inicio [Real]",
+                                min_value=project["start_date"] if not project['executed'] else project['executed'],
+                                max_value=project["end_date"],
+                                default=project["start_date"],
+                                format="DD/MM/YYYY",
+                                required=True
+                            ),
+                            "real_end_date": st.column_config.DateColumn(
+                                "Data de Termino [Real]",
+                                min_value=project["start_date"] if not project['executed'] else project['executed'],
+                                max_value=project["end_date"],
+                                default=project["end_date"],
+                                format="DD/MM/YYYY",
+                                required=True
+                            )
+                        },
+                        use_container_width=True,
+                        num_rows='dynamic'
                     )
-                },
-                key=f"project_wp_{st.session_state.key}",
-                num_rows='dynamic'
-            )
-
-            timeline_mod = st.data_editor(
-                timeline[['wp', 'activity', 'trl', 'start_date', 'end_date', 'real_start_date', 'real_end_date']],
-                column_config={
-                    "wp": st.column_config.SelectboxColumn(
-                        "WP",
-                        options=wps,
-                        required=True
-                    ),
-                    "activity": st.column_config.TextColumn(
-                        "Atividade",
-                        required=True,
-                        default="A"
-                    ),
-                    "trl": st.column_config.SelectboxColumn(
-                        "TRL",
-                        options=['TRL 3-4', 'TRL 5-9'],
-                        required=True
-                    ),
-                    "start_date": st.column_config.DateColumn(
-                        "Data de Inicio [Planeada]",
-                        min_value=project["start_date"],
-                        default=project["start_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "end_date": st.column_config.DateColumn(
-                        "Data de Termino [Planeada]",
-                        max_value=project["end_date"],
-                        default=project["end_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "real_start_date": st.column_config.DateColumn(
-                        "Data de Inicio [Real]",
-                        min_value=project["start_date"],
-                        default=project["start_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "real_end_date": st.column_config.DateColumn(
-                        "Data de Termino [Real]",
-                        max_value=project["end_date"],
-                        default=project["end_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    )
-                },
-                hide_index=True,
-                num_rows='dynamic',
-                use_container_width=True
-            )
+                    wp_acts[['wp', 'project']] = [wp, project['name']]
+                    to_update = pd.concat([to_update, wp_acts])
+                    
             executed_date = st.date_input("Execução", value=project['executed'], min_value=project['start_date'], max_value=project['end_date'])
-            timeline_mod['project'] = project['name']
-
-            if st.button("Save Changes"):
-                if len(timeline_mod["activity"]) != len(set(timeline_mod["activity"])):
-                    st.toast("Duplicate values found in the 'Names' column! Please ensure all values are unique.")
-                else:                    
-                    update_timeline(project, timeline_mod, executed_date)
-                    st.rerun()
+            
+            if st.button("Save Changes"):                  
+                update_timeline(project, to_update.reset_index(names="activity"), executed_date)
             
             if st.button("Discard Changes", key="discard_timeline"):
                 reset_key()
@@ -358,15 +326,19 @@ def main():
 
             for member in members:
 
-                with st.expander(member):
+                with st.expander(member, expanded=True):
 
-                    updated.loc[member, 'profile'] = st.text_input("Pefil", key=f"{member}_perfil_{st.session_state.key}", value= updated.loc[member, 'profile'] if member in updated.index else '')
-                    updated.loc[member,'gender'] = st.selectbox("Genero", options=["M","F"], key=f"{member}_genero_{st.session_state.key}", index=1 if not pd.isna(gender:=updated.loc[member,'gender']) and gender == 'F' else 0)
-                    updated.loc[member,'start_date'] = st.date_input("Data de Inicio",key=f"{member}_inicio_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'start_date'] if not pd.isna(updated.loc[member,'start_date']) else project['start_date'], min_value=project['start_date'])
-                    updated.loc[member,'end_date'] = st.date_input("Data de Termino",key=f"{member}_fim_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'end_date'] if not pd.isna(updated.loc[member,'end_date']) else project['end_date'], max_value=project['end_date'])
+                    col1, col2 = st.columns(2)
+
+                    updated.loc[member, 'profile'] = col1.text_input("Pefil", key=f"{member}_perfil_{st.session_state.key}", value= updated.loc[member, 'profile'] if member in updated.index else '')
+                    updated.loc[member,'gender'] = col2.selectbox("Genero", options=["M","F"], key=f"{member}_genero_{st.session_state.key}", index=1 if not pd.isna(gender:=updated.loc[member,'gender']) and gender == 'F' else 0)
+                    
+                    col1, col2 = st.columns(2)
+                    updated.loc[member,'start_date'] = col1.date_input("Data de Inicio",key=f"{member}_inicio_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'start_date'] if not pd.isna(updated.loc[member,'start_date']) else project['start_date'], min_value=project['start_date'])
+                    updated.loc[member,'end_date'] = col2.date_input("Data de Termino",key=f"{member}_fim_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'end_date'] if not pd.isna(updated.loc[member,'end_date']) else project['end_date'], max_value=project['end_date'])
 
             if st.button("Update Members"):
-                updated['project'] = st.session_state.project_name
+                updated['project'] = project['name']
                 updated = updated.reset_index()
                 
                 if updated.eq('').any().any():
@@ -508,8 +480,6 @@ def main():
 
                     st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum())
 
-
-
         with tab_imputations:
             
             work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
@@ -540,7 +510,6 @@ def main():
                 st.dataframe(affection.groupby(level=[2,1]).sum())
                 st.dataframe(affection.groupby(level=0).sum())
             
-
         with tab_costs:
             work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
             planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
