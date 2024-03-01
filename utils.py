@@ -42,7 +42,7 @@ def update_timeline(project, data, executed):
     
 
     for act in data.itertuples(index=False):
-        project_range = pd.date_range(start= act.real_start_date, end=act.real_end_date, freq="MS")
+        act_range = pd.date_range(start= act.real_start_date, end=act.real_end_date, freq="MS")
 
         if not executed:
             st.session_state.planned_work = st.session_state.planned_work.query('~ (project == @project["name"] and activity == @act.activity)')
@@ -50,7 +50,7 @@ def update_timeline(project, data, executed):
             st.session_state.planned_work = st.session_state.planned_work.query('~ (project == @project["name"] and activity == @act.activity and date > @executed)')
 
 
-        comb = list(product(contracts['person'], project_range))
+        comb = list(product(contracts['person'], act_range))
         act_df = pd.DataFrame({"person": [item[0] for item in comb], "project": project['name'], "activity": act.activity, "date": [item[1] for item in comb], "hours":0})
         st.session_state.planned_work = pd.concat([st.session_state.planned_work, act_df])
         
@@ -100,8 +100,9 @@ def update_contracts(project, data):
 
         st.session_state.real_work = pd.concat([st.session_state.real_work, pd.DataFrame({"person": contract.person, "project":project["name"], "date": contract_range, "hours":0})])
         
-        activities_dates_combinations = list(product(activities['activity'], contract_range))
-        st.session_state.planned_work = pd.concat([st.session_state.planned_work, pd.DataFrame({"person": contract.person, "project":project["name"], "activity":[item[0] for item in activities_dates_combinations], "date": [item[1] for item in activities_dates_combinations], "hours":0})])
+        for act in activities.itertuples(index=False):
+            act_range = pd.date_range(start=act.real_start_date, end=act.real_end_date, freq='MS')
+            st.session_state.planned_work = pd.concat([st.session_state.planned_work, pd.DataFrame({"person": contract.person, "project":project["name"], "activity":act.activity, "date":act_range, "hours":0})])
 
     st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person", "date"])
     st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person", "project", "date"])    
