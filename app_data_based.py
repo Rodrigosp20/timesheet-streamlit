@@ -1,5 +1,7 @@
+import base64
 from datetime import timedelta
 import datetime
+from io import BytesIO
 import streamlit as st
 from streamlit_tags import st_tags
 import pandas as pd
@@ -144,8 +146,34 @@ def main():
         start_date = st.date_input("Data de inicio", format="DD/MM/YYYY", value=None)
         end_date = st.date_input("Data de encerramento", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
         
+        with st.expander("Carregar Através de Ficheiro"):
+
+            file = st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx")
+            team, activities, sheets, planned_work, real_work = read_timesheet(file, project_name, start_date, end_date)
+
+            st.dataframe(team)
+            
+            activities["trl"] = "TRL " + activities['trl']
+            activities["start_date"] = start_date
+            activities["end_date"] = end_date
+            activities["real_start_date"] = start_date
+            activities["real_end_date"] = end_date
+
+            
+            st.data_editor(
+                activities,
+                column_order=("wp", "task", "trl","start_date","end_date","real_start_date","real_end_date"),
+                hide_index=True
+            )
+            
+
+        
         if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
-            create_project(project_name, start_date, end_date)
+            if file:
+                create_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
+            else:
+                create_project(project_name, start_date, end_date)
+                
     
     else:
 
@@ -153,14 +181,107 @@ def main():
 
         with tab_project:
             st.title(project)
-
             project = st.session_state.projects.loc[st.session_state.projects['name'] == project].iloc[0]
-        
-            start_date = st.date_input("Data Inicio", value=project.loc['start_date'], format="DD/MM/YYYY", max_value=project.loc['start_date'])
-            end_date = st.date_input("Data Fim", value=project.loc['end_date'], format="DD/MM/YYYY", min_value=project.loc['end_date'])
 
-            if st.button("Save changes", disabled=invalid(start_date, end_date)):
-                update_project_dates(project, start_date, end_date)
+            with st.container(border=True): #Date Project Container
+                    
+                start_date = st.date_input("Data de Inicio", key=f"project_date_initial_{st.session_state.key}", value=project.loc['start_date'], format="DD/MM/YYYY", max_value=project.loc['start_date'])
+                end_date = st.date_input("Data de Termino", key=f"project_date_final_{st.session_state.key}", value=project.loc['end_date'], format="DD/MM/YYYY", min_value=project.loc['end_date'])
+
+                _,col2 = st.columns([0.55,0.45])
+                col1, col2 = col2.columns(2)
+
+                if col1.button("Guardar Alterações", key="save_project_dates", disabled=invalid(start_date, end_date)):
+                    update_project_dates(project, start_date, end_date)
+
+                col2.button("Descartar Alterações", key="discard_project_dates", on_click=reset_key)
+
+            with st.expander("Gerar Folhas de Afetação"):
+                start_date, end_date = st.slider(
+                    "Selecionar espaço temporal",
+                    min_value= project["start_date"],
+                    max_value= project["end_date"],
+                    value= (project["start_date"], project["end_date"]),
+                    format="MM/YYYY"
+                )
+                
+                if st.button("Gerar Excel", use_container_width=True):
+                    wb = generate_sheets(project, start_date, end_date)
+                
+                    virtual_workbook = BytesIO()
+                    wb.save(virtual_workbook)
+                    virtual_workbook.seek(0)
+                    
+                    st.download_button(
+                        label="Download Excel File",
+                        data = virtual_workbook,
+                        file_name="sheets.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+            
+            with st.expander("Gerar Folhas de Pagamentos"):
+                start_date, end_date = st.slider(
+                    "Selecionar espaço temporal",
+                    min_value= project["start_date"],
+                    max_value= project["end_date"],
+                    value= (project["start_date"], project["end_date"]),
+                    format="MM/YYYY",
+                    key="slider_pay"
+                )
+
+                if template := st.file_uploader("Template", type=".xlsx", accept_multiple_files=False):
+                    df_team = pd.read_excel(template ,sheet_name="Referências", usecols="H", header=3, names=["tecnico"]).dropna()
+                    df_team['equipa'] = None
+
+                    df_team = st.data_editor(
+                        df_team,
+                        column_config={
+                            "equipa":st.column_config.SelectboxColumn(
+                                "equipa",
+                                options=st.session_state.contracts.query('project == @project["name"]')["person"].unique()
+                            )
+                        },
+                        disabled=["tecnico"],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    df_trl = pd.read_excel(template, sheet_name="Referências", usecols="E", header=3, names=["investimento"]).dropna()
+                    df_trl['wp'] = None
+                    df_trl['trl'] = None
+
+                    df_trl = st.data_editor(
+                        df_trl,
+                        column_config={
+                            "wp":st.column_config.SelectboxColumn(
+                                "wp",
+                                options=st.session_state.activities.query('project == @project["name"]')['wp'].unique()
+                            ),
+                            "trl":st.column_config.SelectboxColumn(
+                                "trl",
+                                options=st.session_state.activities.query('project == @project["name"]')['trl'].unique()
+                            ),
+                        },
+                        disabled=['investimento'],
+                        hide_index=True,
+                        use_container_width=True
+                    )                    
+
+                    if st.button("Gerar Excel", key="pay_excel", use_container_width=True):
+                        wb = generate_pay_sheets(project, template, start_date, end_date, df_team, df_trl)
+
+                        virtual_workbook = BytesIO()
+                        wb.save(virtual_workbook)
+                        virtual_workbook.seek(0)
+
+                        st.download_button(
+                            label="Download Excel File",
+                            data = virtual_workbook,
+                            file_name="sheets.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
         
         with tab_timeline:            
             timeline = st.session_state.activities.query("project == @project['name']")
@@ -202,7 +323,7 @@ def main():
                     'Task': act.activity,
                     'Start': act.start_date,
                     'Finish': act.end_date,
-                    'Color': f"Planeado"
+                    'Color': "Planeado"
                 })
             
                 if act.start_date != act.real_start_date or act.end_date != act.real_end_date:   
@@ -221,19 +342,23 @@ def main():
                         'Color': "Executado"
                     })
             
+            
+            st.subheader("Timeline")
             if len(gantt_data) > 0:
                 gantt_df = pd.DataFrame(gantt_data)
 
                 fig = px.timeline(gantt_df, x_start="Start", x_end="Finish", y="Task", color="Color", color_discrete_map={'Planeado':"#0AA3EB", "Real":"#DAF1FC", "Executado":"#878787"}, category_orders={'Color': ["WP","Planeado","Real"]})
                 fig.update_yaxes(autorange="reversed")
-                fig.update_layout(barmode='group')
+                fig.data[1].width = 0.5
+                #fig.update_layout(barmode='group')
                 
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.write('<p style="text-align: center;">Sem Dados Disponíveis</p>', unsafe_allow_html=True)
             
+            st.subheader("WPs do Projeto")
             wps = st_tags(
-                label='Workpackages do Projeto',
+                label='',
                 text='Inserir',
                 value=list(timeline['wp'].unique()),
                 suggestions=list(timeline['wp'].unique()),
@@ -244,6 +369,7 @@ def main():
             activities = activities.set_index('activity')
             
             to_update = pd.DataFrame(columns=activities.columns)
+            st.subheader("Atividades do Projeto")
             for wp in wps:
 
                 with st.expander(wp):                    
@@ -251,12 +377,14 @@ def main():
 
                     wp_acts = st.data_editor(
                         wp_df,
+                        key=f"{wp}_data_{st.session_state.key}",
                         column_order=["activity", "trl", "start_date", "end_date", "real_start_date", "real_end_date"],
                         column_config={
                             "activity": st.column_config.TextColumn(
                                 "Atividade",
                                 required=True,
-                                default="A"
+                                default="A",
+                                width="medium"
                             ),
                             "trl": st.column_config.SelectboxColumn(
                                 "TRL",
@@ -300,14 +428,17 @@ def main():
                     wp_acts[['wp', 'project']] = [wp, project['name']]
                     to_update = pd.concat([to_update, wp_acts])
                     
-            executed_date = st.date_input("Execução", value=project['executed'], min_value=project['start_date'], max_value=project['end_date'])
+            col1 , col2 = st.columns(2)
             
-            if st.button("Save Changes"):                  
-                update_timeline(project, to_update.reset_index(names="activity"), executed_date)
+            executed_date = col1.date_input("Execução", value=project['executed'], min_value=project['start_date'], max_value=project['end_date'], format="DD/MM/YYYY")
+            to_adjust  = col2.toggle("Ajuste Automático das Horas Planeadas")
             
-            if st.button("Discard Changes", key="discard_timeline"):
-                reset_key()
-                st.rerun()
+            col1, col2 = st.columns(2)
+
+            if col1.button("Guardar Alterações", key="save_timeline", use_container_width=True):                  
+                update_timeline(project, to_update.reset_index(names="activity"), executed_date, to_adjust)
+            
+            col2.button("Descartar Alterações", key="discard_timeline", on_click=reset_key, use_container_width=True)
        
         with tab_team:
             contracts = st.session_state.contracts
@@ -354,26 +485,43 @@ def main():
         with tab_sheet:
             contracts = st.session_state.contracts.query('project == @project["name"]')
 
-            if person := st.selectbox("Selecionar Membro", options= contracts['person'].unique()):
+            col1, col2 = st.columns([0.7,0.3])
+            if person := col1.selectbox("Selecionar Membro", options= contracts['person'].unique()):
                 
-                contract = contracts[contracts['person'] == person].iloc[0]
+                col1, col2 = col2.columns(2)
 
-                contract_range = date_range(contract["start_date"],contract["end_date"])
-                columns_config = {date : st.column_config.NumberColumn(date, format="%.2f", disabled=True) for date in contract_range }
+                saved_button = col1.button("Guardar Alterações")
+                col2.button("Descartar Alterações", key="sheet_discard", on_click=reset_key)
+
+                contract = contracts[contracts['person'] == person].iloc[0]
+                
+                contract_start_date = get_first_date(contract["start_date"])
+                contract_end_date = get_first_date(contract["end_date"])
+
+                contract_range = date_range(contract_start_date,contract_end_date)
+                columns_config = {date : st.column_config.NumberColumn(date, format="%.2f", width="small", disabled=True) for date in contract_range }
                 activities_config = {date : st.column_config.NumberColumn(date, default=0) for date in contract_range }
+
+                if project['executed']:
+                    disabled_cols = [date for date in date_range(project["start_date"], project['executed'])]
+                else:
+                    disabled_cols = []
+
                 columns_config[""] = st.column_config.TextColumn(width="medium")
                 activities_config[""] = st.column_config.TextColumn("Atividades", width="medium", required=True)
                 
                 activities = st.session_state.activities.query('project == @project["name"]')
-                sheet = st.session_state.sheets.query('person == @person and date >= @contract["start_date"] and date <= @contract["end_date"]')
-                real_work = st.session_state.real_work.query('person == @person and date >= @contract["start_date"] and date <= @contract["end_date"]')
-                planned_work = st.session_state.planned_work.query('person == @person and date >= @contract["start_date"] and date <= @contract["end_date"] and project == @project["name"]')
+                sheet = st.session_state.sheets.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
+                real_work = st.session_state.real_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
+                planned_work = st.session_state.planned_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date and project == @project["name"]')
                 
                 sheet = sheet.merge(real_work.query('project == @project["name"]')[['date', 'hours']], on="date", how="left").rename(columns={'hours':'Horas Reais'})
                 sheet = sheet.drop(columns='person').set_index('date')
                 sheet.index = sheet.index.strftime('%b/%y')
                 sheet = sheet.transpose()
 
+                st.subheader("Folha de Horas")
+                print(disabled_cols)
                 modifications = st.data_editor(
                     sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]],
                     key = f"{person}_sheet_{st.session_state.key}",
@@ -382,12 +530,15 @@ def main():
                         "":st.column_config.TextColumn(
                             width="medium"
                         )
-                    }
+                    },
+                    disabled=disabled_cols
                 )
 
                 modifications.loc['Salário'] = None
                 modifications.loc['SS'] = None
                 
+
+                st.subheader("Folha Salarial")
 
                 modifications.loc[['Salário','SS']] = st.data_editor(
                     sheet.loc[['Salário', 'SS']],
@@ -397,31 +548,29 @@ def main():
                         "":st.column_config.TextColumn(
                             width="medium"
                         )
-                    }
+                    },
+                    disabled=disabled_cols
                 )
                 
                 modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
                 modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])).fillna(0)
                 modifications.loc['Custo Aproximado'] =  ( modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan) * modifications.loc['Salário']*14 / 11 * (1 + modifications.loc['SS'] / 100)).fillna(0)
 
-                if saved_button := st.button("Apply Changes"):
+                if saved_button:
                     to_update = modifications.transpose()
                     to_update = to_update.reset_index('date')
                     to_update['date'] = pd.to_datetime(to_update['date'], format='%b/%y')
                     to_update['person'] = person
                     
-                    st.session_state.sheets = st.session_state.sheets.query('(person != @person) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                    st.session_state.sheets = st.session_state.sheets.query('(person != @person) or (date < @contract_start_date or date > @contract_end_date)')
                     st.session_state.sheets = pd.concat([st.session_state.sheets, to_update[['person', 'date', 'Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Salário', 'SS', 'Custo Aproximado']]])
 
                     to_update['hours'] = to_update['Horas Reais']
                     to_update['project'] = project['name']
-                    st.session_state.real_work = st.session_state.real_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                    st.session_state.real_work = st.session_state.real_work.query('(person != @person) or (project != @project["name"]) or (date < @contract_start_date or date > @contract_end_date)')
                     st.session_state.real_work = pd.concat([st.session_state.real_work, to_update[['person', 'project', 'date', 'hours']]])
 
-                if st.button("Discard Changes", key="sheet_discard"):
-                    st.session_state.key = (st.session_state.key + 1) % 2
-                    st.rerun()
-
+                st.subheader("Sumário")
                 st.dataframe(
                     modifications.loc[['Horas Trabalhadas', 'FTE', 'Custo Aproximado']],
                     use_container_width=True,
@@ -430,8 +579,11 @@ def main():
 
                 planned_work = planned_work.merge(activities[['activity', "wp", 'trl']], on="activity", how="left")
                 planned_work = planned_work.drop(columns=['person', 'project'])
+                planned_work = planned_work.sort_values(by="wp")
 
                 wp_sheet = pd.DataFrame(columns=sheet.columns)
+
+                st.subheader("Horas Planeadas")
 
                 for wp in planned_work['wp'].unique():
 
@@ -450,50 +602,61 @@ def main():
                                 wp,
                                 width="medium",
                             )
-                        }
+                        },
+                        disabled=disabled_cols
                     )
                     
                     wp_sheet = pd.concat([wp_sheet, wp_sheet_modifications])
 
-                other_activities = real_work.query('date >= @contract["start_date"] and date <= @contract["end_date"]')[['date','hours', 'project']]
+                other_activities = real_work.query('date >= @contract_start_date and date <= @contract_end_date')[['date','hours', 'project']]
                 other_activities['date'] = other_activities['date'].apply(lambda x: pd.to_datetime(x).strftime('%b/%y'))
                 
                 editable_activities = other_activities.query('project not in  @st.session_state.projects["name"]').pivot_table(index='project', columns='date', values='hours')
                 noneditable_activities = other_activities.query('project in  @st.session_state.projects["name"] and project != @project["name"]').pivot_table(index='project', columns='date', values='hours')
 
+                st.subheader("Resumo de Horas")
                 df_edit = pd.concat([pd.DataFrame(columns=sheet.columns), editable_activities])
                 if df_edit.empty:
                     df_edit.loc[""] = 0
                 
-                df_edit = st.data_editor(
-                    df_edit,
-                    num_rows='dynamic',
-                    column_config=activities_config
-                )
+
+                with st.expander("Editar Outras Atividades [Não Listadas]"):
+                    df_edit = st.data_editor(
+                        df_edit,
+                        num_rows='dynamic',
+                        column_config=activities_config
+                    )
 
                 df_noedit = pd.concat([pd.DataFrame(columns=sheet.columns), noneditable_activities])
                 if not df_noedit.empty:
-                    df_noedit_mod = st.data_editor(
-                        df_noedit,
-                        column_config={
-                            "":st.column_config.TextColumn(
-                                "Atividade",
-                                width="medium",
-                                required=True
-                            )
-                        }
-                    )
+                    with st.expander("Editar Outras Atividades [Listadas]"):
+                        df_noedit_mod = st.data_editor(
+                            df_noedit,
+                            column_config={
+                                "":st.column_config.TextColumn(
+                                    "Atividade",
+                                    width="medium",
+                                    required=True
+                                )
+                            }
+                        )
 
-                    df_noedit_mod= df_noedit_mod.fillna(0)
-                    df_noedit_mod = df_noedit_mod.where(~ df_noedit.isna(), other=None)
-                    df_noedit = df_noedit_mod
+                        df_noedit_mod= df_noedit_mod.fillna(0)
+                        df_noedit_mod = df_noedit_mod.where(~ df_noedit.isna(), other=None)
+                        df_noedit = df_noedit_mod
             
             
                 df = pd.concat([df_edit.loc[df_edit.index != ""], df_noedit])
                 df.loc['Outras Atividades'] = modifications.loc['Horas Trabalhadas'] - df.sum(axis=0) - modifications.loc['Horas Reais'].fillna(0)
 
                 st.dataframe(
-                    df
+                    df,
+                    column_config={
+                        "": st.column_config.TextColumn(
+                            "Atividades",
+                            width="medium"
+                        )
+                    }
                 )
 
                 if saved_button:
@@ -505,9 +668,8 @@ def main():
                     df = df.dropna(subset="hours")
                     df = df.loc[df['project'] != 'Outras Atividades']
                     
-                    st.session_state.real_work = st.session_state.real_work.query('~(person == @person and project in @df["project"].unique() and date >= @contract["start_date"] and date <= @contract["end_date"])')
+                    st.session_state.real_work = st.session_state.real_work.query('~(person == @person and project in @df["project"].unique() and date >= @contract_start_date and date <= @contract_end_date)')
                     st.session_state.real_work = pd.concat([st.session_state.real_work, df])
-                    print(st.session_state.real_work)
 
                 if not wp_sheet.empty:
 
@@ -518,7 +680,7 @@ def main():
                         wp_sheet['person'] = person
                         wp_sheet['project'] = project['name']
 
-                        st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @contract["start_date"] or date > @contract["end_date"])')
+                        st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @contract_start_date or date > @contract_end_date)')
                         st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
                         st.rerun()
 
@@ -530,16 +692,22 @@ def main():
 
                     wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
                     
-                    st.dataframe(wp_sheet)
+                    with st.expander("Afetação de Horas p/ Atividade"):
+                        st.dataframe(wp_sheet)
 
                     cost_wp = wp_sheet * (((modifications.loc['Salário'] * 14) / 11)* (1+(modifications.loc['SS']/100) ))
-    
-                    st.dataframe(cost_wp)
+
+                    with st.expander("Custo Monetário p/ Atividade"):
+                        st.dataframe(cost_wp)
                     
                     wp_sheet = wp_sheet.reset_index(names="activity")
                     wp_sheet = wp_sheet.merge(activities[['activity', 'wp', 'trl']], on="activity", how="left")
 
-                    st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum())
+                    st.subheader("Afetação WP e TRL")
+                    def highlight_positive(val):
+                        color = '#2e9aff' if val > 0 else 'white'
+                        return f'color: {color};'
+                    st.dataframe(wp_sheet.drop(columns=['activity']).groupby(['wp', 'trl']).sum().style.applymap(highlight_positive))
 
         with tab_imputations:
             
