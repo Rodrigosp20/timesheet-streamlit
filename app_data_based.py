@@ -148,31 +148,32 @@ def main():
         
         with st.expander("Carregar Através de Ficheiro"):
 
-            file = st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx")
-            team, activities, sheets, planned_work, real_work = read_timesheet(file, project_name, start_date, end_date)
+            if file := st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx", key=f"file_uploader_{st.session_state.key}"):
+                team, activities, sheets, planned_work, real_work = read_timesheet(file, project_name, start_date, end_date)
 
-            st.dataframe(team)
-            
-            activities["trl"] = "TRL " + activities['trl']
-            activities["start_date"] = start_date
-            activities["end_date"] = end_date
-            activities["real_start_date"] = start_date
-            activities["real_end_date"] = end_date
+                st.dataframe(team)
+                
+                activities["trl"] = "TRL " + activities['trl']
+                activities["start_date"] = start_date
+                activities["end_date"] = end_date
+                activities["real_start_date"] = start_date
+                activities["real_end_date"] = end_date
 
+                
+                st.data_editor(
+                    activities,
+                    column_order=("wp", "task", "trl","start_date","end_date","real_start_date","real_end_date"),
+                    hide_index=True
+                )
             
-            st.data_editor(
-                activities,
-                column_order=("wp", "task", "trl","start_date","end_date","real_start_date","real_end_date"),
-                hide_index=True
-            )
+    
+                if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
+                    create_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
             
-
-        
-        if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
-            if file:
-                create_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
             else:
-                create_project(project_name, start_date, end_date)
+
+                if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
+                    create_project(project_name, start_date, end_date)
                 
     
     else:
@@ -182,6 +183,11 @@ def main():
         with tab_project:
             st.title(project)
             project = st.session_state.projects.loc[st.session_state.projects['name'] == project].iloc[0]
+            print(st.session_state.contracts)
+            print(st.session_state.activities)
+            print(st.session_state.sheets)
+            print(st.session_state.real_work)
+            print(st.session_state.planned_work)
 
             with st.container(border=True): #Date Project Container
                     
@@ -349,7 +355,8 @@ def main():
 
                 fig = px.timeline(gantt_df, x_start="Start", x_end="Finish", y="Task", color="Color", color_discrete_map={'Planeado':"#0AA3EB", "Real":"#DAF1FC", "Executado":"#878787"}, category_orders={'Color': ["WP","Planeado","Real"]})
                 fig.update_yaxes(autorange="reversed")
-                fig.data[1].width = 0.5
+                if len(fig.data) > 1:
+                    fig.data[1].width = 0.5
                 #fig.update_layout(barmode='group')
                 
                 st.plotly_chart(fig, use_container_width=True)
@@ -521,7 +528,7 @@ def main():
                 sheet = sheet.transpose()
 
                 st.subheader("Folha de Horas")
-                print(disabled_cols)
+                
                 modifications = st.data_editor(
                     sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]],
                     key = f"{person}_sheet_{st.session_state.key}",

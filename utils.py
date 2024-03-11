@@ -31,13 +31,13 @@ def create_project(name, start, end, activities=None, team=None, sheets=None, pl
 
     st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
     
-    
     st.session_state.activities = pd.concat([st.session_state.activities, activities])
     st.session_state.contracts = pd.concat([st.session_state.contracts , team])
+
     st.session_state.sheets = pd.concat([st.session_state.sheets , sheets])
     st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person","date"])
     st.session_state.real_work = pd.concat([st.session_state.real_work , real_work])
-    st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person","project"])
+    st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person","project","date"])
     st.session_state.planned_work = pd.concat([st.session_state.planned_work , planned_work])
 
     reset_key()
@@ -308,6 +308,7 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
     df_team = df_team[df_team['res'] > 0]
 
     df_team = df_team.merge(df_trl, on=["wp", "trl"], how="left")
+    df_team = df_team[~ pd.isna(df_team['investimento'])]
     
     wb = load_workbook(file)
     ws = wb['Mapa']
@@ -323,13 +324,13 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
 
 @st.cache_data
 def read_timesheet(file, project, start_date, end_date):
-
+    
     team = pd.read_excel(file, sheet_name="Equipa de projeto", usecols="C:G", header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")
     team = pd.concat([team, pd.read_excel(file, sheet_name="Equipa de projeto", usecols=[2,7,8,9,10], header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")]) 
    
     team.loc[pd.isna(team['end_date']), "end_date"] = end_date
     
-    timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["task","trl"]).dropna(subset="task").fillna(method='bfill')
+    timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["activity","trl"]).dropna(subset="activity").fillna(method='bfill')
     
     activities = pd.DataFrame()
 
@@ -343,12 +344,15 @@ def read_timesheet(file, project, start_date, end_date):
         else:
             wp_next = wp_index[i+1]
         
-        wp_name = timeline.loc[wp, "task"]
+        wp_name = timeline.loc[wp, "activity"]
 
-        wp_activities = timeline.loc[[ind for ind in timeline.index if (ind > wp and ind < wp_next and (ind-wp-1) % 13 == 0)], ["task","trl"]]
+        wp_activities = timeline.loc[[ind for ind in timeline.index if (ind > wp and ind < wp_next and (ind-wp-1) % 13 == 0)], ["activity","trl"]]
         wp_activities['wp'] = wp_name
 
         activities = pd.concat([activities, wp_activities])
+
+    activities['project'] = project
+    team['project'] = project
     
     sheets = pd.DataFrame()
     planned_works = pd.DataFrame()
@@ -376,17 +380,17 @@ def read_timesheet(file, project, start_date, end_date):
 
         sheet["SS"] = sheet["SS"] * 100
         sheet["person"] = contract.person
-        sheet["date"] = pd.to_datetime(sheet['date']).dt.date
+        sheet["date"] = pd.to_datetime(sheet['date'])
 
         sheets = pd.concat([sheets, sheet])
 
-        planned_work = df.loc[activities['task'].unique(), contract_range]
+        planned_work = df.loc[activities['activity'].unique(), contract_range]
         planned_work = planned_work[~planned_work.index.duplicated()].fillna(0)
 
         planned_work = planned_work.reset_index(names="activity").melt(id_vars='activity', var_name='date', value_name='hours')
         planned_work['project'] = project
         planned_work['person'] = contract.person
-        planned_work["date"] = pd.to_datetime(planned_work['date']).dt.date
+        planned_work["date"] = pd.to_datetime(planned_work['date'])
 
         planned_works = pd.concat([planned_works, planned_work])
 
@@ -400,7 +404,7 @@ def read_timesheet(file, project, start_date, end_date):
         real_work = real_work.reset_index(names="project").melt(id_vars='project', var_name='date', value_name='hours')
 
         real_work['person'] = contract.person
-        real_work['date'] = pd.to_datetime(real_work['date']).dt.date
+        real_work['date'] = pd.to_datetime(real_work['date'])
 
         real_work.loc[real_work['project'] == 'Horas Reais PRR', "project"] = project
 
