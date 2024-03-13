@@ -142,52 +142,42 @@ def main():
     if not (project := st.sidebar.selectbox('Select a Project', options = [""] + st.session_state.projects['name'].to_list(), placeholder="Escolhe um projeto", on_change=reset_key)):
         st.title("Criar Projeto")
 
-        project_name = st.text_input("Nome do projeto", key=f"project_name_{st.session_state.key}")
-        start_date = st.date_input("Data de inicio", format="DD/MM/YYYY", value=None)
-        end_date = st.date_input("Data de encerramento", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
+        with st.expander("Criar Projeto Vazio"):
+            project_name = st.text_input("Nome do projeto", key=f"project_name_{st.session_state.key}")
+            start_date = st.date_input("Data de inicio", format="DD/MM/YYYY", value=None)
+            end_date = st.date_input("Data de encerramento", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
+
+            
+            if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
+                create_new_project(project_name, start_date, end_date)
+                
         
-        with st.expander("Carregar Através de Ficheiro"):
+        with st.expander("Adicionar Projeto Existente"):
+            project_name = st.text_input("Nome do projeto", key=f"exist_project_name_{st.session_state.key}")
 
             if file := st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx", key=f"file_uploader_{st.session_state.key}"):
-                team, activities, sheets, planned_work, real_work = read_timesheet(file, project_name, start_date, end_date)
+
+                team, activities, sheets, planned_work, real_work, start_date, end_date = read_timesheet(file, project_name)
 
                 st.dataframe(team)
-                
-                activities["trl"] = "TRL " + activities['trl']
-                activities["start_date"] = start_date
-                activities["end_date"] = end_date
-                activities["real_start_date"] = start_date
-                activities["real_end_date"] = end_date
 
-                
                 st.data_editor(
                     activities,
-                    column_order=("wp", "task", "trl","start_date","end_date","real_start_date","real_end_date"),
+                    column_order=("wp", "activity", "trl","start_date","end_date","real_start_date","real_end_date", "project"),
                     hide_index=True
                 )
             
     
-                if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
-                    create_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
-            
-            else:
-
-                if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
-                    create_project(project_name, start_date, end_date)
-                
+                if st.button("Adicionar Projeto", disabled= invalid(project_name, start_date, end_date)):
+                    add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
     
     else:
 
         tab_project, tab_timeline, tab_team, tab_sheet, tab_imputations, tab_costs = st.tabs(["Projeto", "Cronograma", "Equipa", "Pessoal", "Imputação Horas", "Custos"])
-
+        
         with tab_project:
             st.title(project)
             project = st.session_state.projects.loc[st.session_state.projects['name'] == project].iloc[0]
-            print(st.session_state.contracts)
-            print(st.session_state.activities)
-            print(st.session_state.sheets)
-            print(st.session_state.real_work)
-            print(st.session_state.planned_work)
 
             with st.container(border=True): #Date Project Container
                     
@@ -391,7 +381,7 @@ def main():
                                 "Atividade",
                                 required=True,
                                 default="A",
-                                width="medium"
+                                width="medium",
                             ),
                             "trl": st.column_config.SelectboxColumn(
                                 "TRL",
@@ -528,14 +518,15 @@ def main():
                 sheet = sheet.transpose()
 
                 st.subheader("Folha de Horas")
-                
+
                 modifications = st.data_editor(
                     sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]],
                     key = f"{person}_sheet_{st.session_state.key}",
                     use_container_width=True,
                     column_config={
                         "":st.column_config.TextColumn(
-                            width="medium"
+                            width="medium",
+                            disabled=True
                         )
                     },
                     disabled=disabled_cols
@@ -553,14 +544,15 @@ def main():
                     use_container_width=True,
                     column_config={
                         "":st.column_config.TextColumn(
-                            width="medium"
+                            width="medium",
+                            disabled=True
                         )
                     },
                     disabled=disabled_cols
                 )
                 
                 modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
-                modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias'])).fillna(0)
+                modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias']).replace(0, np.nan)).fillna(0)
                 modifications.loc['Custo Aproximado'] =  ( modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan) * modifications.loc['Salário']*14 / 11 * (1 + modifications.loc['SS'] / 100)).fillna(0)
 
                 if saved_button:
@@ -602,12 +594,10 @@ def main():
                         wp_work,
                         key = f"{person}_work_{wp}_{st.session_state.key}",
                         column_config={
-                            wp:st.column_config.NumberColumn(
-                                width="large"
-                            ),
                             "activity":st.column_config.TextColumn(
                                 wp,
                                 width="medium",
+                                disabled=True
                             )
                         },
                         disabled=disabled_cols
@@ -643,7 +633,8 @@ def main():
                                 "":st.column_config.TextColumn(
                                     "Atividade",
                                     width="medium",
-                                    required=True
+                                    required=True,
+                                    disabled=True
                                 )
                             }
                         )
@@ -727,9 +718,26 @@ def main():
                 ftes['FTE'] = (ftes['hours'] / (ftes['Jornada Diária'] * ftes['Dias Úteis'] - ftes['Férias']).replace(0, np.nan)).fillna(0)
                 ftes = ftes.pivot_table(index='gender', columns='date', values='FTE', aggfunc='sum')
                 ftes.columns = ftes.columns.strftime('%b/%y')
-            
-                st.dataframe(ftes)
+                
+                ftes.index = ftes.index.map(lambda x: 'Masculino' if x == 'M' else 'Feminino')
+                ftes.fillna(0, inplace=True)
 
+                styled_df = ftes.style.map(lambda x: '' if x > 0 else 'color:#BFBFBF;')
+                styled_df = styled_df.format("{:.2f}")
+
+                st.subheader("FTE p/ Género")
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "gender":st.column_config.TextColumn(
+                            "Género",
+                            width="medium"
+                        )
+                    }
+
+                )
+
+                
                 activities = st.session_state.activities.query('project == @project["name"]')
                 planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
                 planned_work = planned_work.merge(activities[["wp", "activity", "trl"]], on="activity", how="left")
@@ -741,10 +749,39 @@ def main():
                 affection = planned_work.div(sum_wp.replace(0,np.nan)).mul(work).fillna(0)      
                 affection.columns = affection.columns.strftime('%b/%y')
                 #st.dataframe(affection)
-            
-                st.dataframe(affection.groupby(level=[2,0]).sum())
-                st.dataframe(affection.groupby(level=[2,1]).sum())
-                st.dataframe(affection.groupby(level=0).sum())
+                st.subheader("Horas p/ WP")
+
+                styled_df = affection.groupby(level=[1]).sum().style.map(lambda x: '' if x > 0 else 'color:#BFBFBF;')
+                styled_df = styled_df.format("{:.2f}")
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "wp":st.column_config.TextColumn(
+                            "WP",
+                            width="medium"
+                        )
+                    }
+                )
+                
+
+                st.subheader("Horas p/ Perfil")
+                person_wp = affection.groupby(level=[0,1]).sum()   
+                person_trl = affection.groupby(level=[2,0]).sum()          
+
+                for person, _ in person_wp.groupby(level='person'):
+                    df = pd.concat([person_wp.xs(person, level='person'), person_trl.xs(person, level='person')])
+                    st.dataframe(
+                        df,
+                        column_config={
+                            "":st.column_config.TextColumn(
+                                person,
+                                width="medium"
+                            )
+                        }
+                    )
+                
+                
+                #st.dataframe(affection.groupby(level=0).sum())
             
         with tab_costs:
             work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
@@ -765,7 +802,15 @@ def main():
                 affection = planned_work.div(sum_wp.replace(0, np.nan)).mul(work).div(sheet['trabalhaveis'].replace(0, np.nan)).fillna(0)
 
                 costs = affection.mul(sheet['sal'])
-                st.dataframe(costs)
+                costs.columns = costs.columns.strftime('%b/%y')
+
+                wps_costs = costs.groupby(['wp']).sum()
+                wp_trl_costs = costs.groupby(['wp', 'trl']).sum()
+                st.subheader("Custos Monetários p/WP")
+                for wp, _ in costs.groupby(level='wp'):
+                    st.dataframe(
+                        pd.concat([wps_costs.loc[wps_costs.index == wp], wp_trl_costs.xs(wp, level="wp")]),
+                    )
             
        
     

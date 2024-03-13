@@ -24,7 +24,16 @@ def get_last_date(date):
     _, last_day = calendar.monthrange(date.year, date.month)
     return datetime.date(date.year, date.month, last_day)
 
-def create_project(name, start, end, activities=None, team=None, sheets=None, planned_work=None, real_work=None):
+def create_new_project(name, start, end):
+    if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
+        return st.error("Projeto já existe")
+
+    st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
+    
+    reset_key()
+    st.rerun()
+
+def add_project(name, start, end, activities, team, sheets, planned_work, real_work):
         
     if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
         return st.error("Projeto já existe")
@@ -38,6 +47,10 @@ def create_project(name, start, end, activities=None, team=None, sheets=None, pl
     st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person","date"])
     st.session_state.real_work = pd.concat([st.session_state.real_work , real_work])
     st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person","project","date"])
+
+    for act in activities.itertuples(index=False):
+        planned_work = planned_work.query('~ (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
+
     st.session_state.planned_work = pd.concat([st.session_state.planned_work , planned_work])
 
     reset_key()
@@ -142,8 +155,11 @@ def update_contracts(project, data):
         contract_end_date = get_last_date(contract.end_date)
 
         contract_range = pd.date_range(start= contract_start_date, end= contract_end_date, freq='MS')
+        business_days = []
+        for month_start in contract_range:
+            business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
 
-        st.session_state.sheets = pd.concat([st.session_state.sheets, pd.DataFrame({"person": contract.person, "date": contract_range, "Jornada Diária": 8, "Dias Úteis":20, "Faltas": 0, "Férias": 0, "Salário": 0, "SS": 23.75})])
+        st.session_state.sheets = pd.concat([st.session_state.sheets, pd.DataFrame({"person": contract.person, "date": contract_range, "Jornada Diária": 8, "Dias Úteis":business_days, "Faltas": 0, "Férias": 0, "Salário": 0, "SS": 23.75})])
 
         st.session_state.real_work = st.session_state.real_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract_start_date and date <= @contract_end_date)')
         st.session_state.planned_work = st.session_state.planned_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract_start_date and date <= @contract_end_date)')
@@ -323,15 +339,22 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
     return wb
 
 @st.cache_data
-def read_timesheet(file, project, start_date, end_date):
-    
+def read_timesheet(file, project):
+
     team = pd.read_excel(file, sheet_name="Equipa de projeto", usecols="C:G", header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")
-    team = pd.concat([team, pd.read_excel(file, sheet_name="Equipa de projeto", usecols=[2,7,8,9,10], header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")]) 
+    team = pd.concat([team, pd.read_excel(file, sheet_name="Equipa de projeto", usecols=[2,7,8,9,10], header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")])
    
+    timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["activity","trl"])
+    timeline['line'] = timeline.index + 10
+    timeline = timeline.dropna(subset="activity").fillna(method='bfill')
+    
+    df_colors, start_date, end_date = extract_cell_colors_and_dates(file)
+
+    start_date = get_first_date(start_date)
+    end_date = get_last_date(end_date)
+
     team.loc[pd.isna(team['end_date']), "end_date"] = end_date
-    
-    timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["activity","trl"]).dropna(subset="activity").fillna(method='bfill')
-    
+
     activities = pd.DataFrame()
 
     wp_index = [ind for ind in timeline.index if (ind % 131) == 0]
@@ -346,14 +369,29 @@ def read_timesheet(file, project, start_date, end_date):
         
         wp_name = timeline.loc[wp, "activity"]
 
-        wp_activities = timeline.loc[[ind for ind in timeline.index if (ind > wp and ind < wp_next and (ind-wp-1) % 13 == 0)], ["activity","trl"]]
+        wp_activities = timeline.loc[[ind for ind in timeline.index if (ind > wp and ind < wp_next and (ind-wp-1) % 13 == 0)], ["activity","trl", "line"]]
         wp_activities['wp'] = wp_name
 
         activities = pd.concat([activities, wp_activities])
 
+    activities = pd.merge(activities, df_colors, left_on='line', right_index=True)
+    activities[['start_date', 'end_date']] = activities.apply(lambda row: min_max_dates(row, -1, 1), axis=1, result_type='expand')
+    activities[['real_start_date', 'real_end_date']] = activities.apply(lambda row: min_max_dates(row, 2, 1), axis=1, result_type='expand')
+   
+    activities.loc[pd.isna(activities['start_date']), "start_date"] = start_date
+    activities.loc[pd.isna(activities['end_date']), "end_date"] = end_date
+    activities.loc[pd.isna(activities['real_start_date']), "real_start_date"] = start_date
+    activities.loc[pd.isna(activities['real_end_date']), "real_end_date"] = end_date
+
     activities['project'] = project
+    activities["trl"] = "TRL " + activities['trl']
+        
+    activities = activities[['activity', 'trl','wp','start_date','end_date','real_start_date','real_end_date', 'project']]
     team['project'] = project
     
+    cols_to_convert = ['start_date','end_date','real_start_date','real_end_date']
+    activities[cols_to_convert] = activities[cols_to_convert].apply(pd.to_datetime)
+
     sheets = pd.DataFrame()
     planned_works = pd.DataFrame()
     real_works = pd.DataFrame()
@@ -409,5 +447,56 @@ def read_timesheet(file, project, start_date, end_date):
         real_work.loc[real_work['project'] == 'Horas Reais PRR', "project"] = project
 
         real_works = pd.concat([real_works, real_work])
+
+        team['person'] = team['person'].str.title()
+        sheets['person'] = sheets['person'].str.title()
+        real_works['person'] = real_works['person'].str.title()
+        planned_works['person'] = planned_works['person'].str.title()
     
-    return team, activities, sheets, planned_works, real_works
+    return team, activities, sheets, planned_works, real_works, start_date, end_date
+
+def extract_cell_colors_and_dates(file):
+    # Load the Excel workbook
+    wb = load_workbook(file, data_only=True)
+    ws = wb['Cronograma']
+
+    months = pd.read_excel(file, sheet_name="Cronograma", header=8, nrows=0).iloc[:, 6:]
+
+    # Initialize an empty list to store cell colors
+    colors_data = []
+
+    # Iterate through each row and column in the worksheet
+
+    for row in ws.iter_rows():
+        row_colors = []
+        for cell in row:
+            # Get the fill color of the cell
+            fill = cell.fill.start_color.index
+            row_colors.append(fill)
+        colors_data.append(row_colors)
+
+    # Convert the list of colors into a DataFrame
+    df = pd.DataFrame(colors_data)
+    df = df.iloc[:, 6: 6+len(months.columns)] 
+
+    active_color = ws['G1325'].fill.start_color.index
+    deactivated_color = ws['O1326'].fill.start_color.index
+    print(deactivated_color)
+    extended_color = ws['G1326'].fill.start_color.index
+
+    df = df.replace(active_color, 1)
+    df = df.replace(deactivated_color, -1)
+    df = df.replace(extended_color, 2)
+    
+    df.columns = months.columns
+
+    return df, months.columns[0], months.columns[-1]
+
+def min_max_dates(row, value1, value2):
+    dates = []
+    for col, val in row.items():
+        if val in [value1, value2]:
+            dates.append(col)
+    if len(dates) == 0:
+        return None, None
+    return min(dates), max(dates)
