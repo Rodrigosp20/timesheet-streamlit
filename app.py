@@ -1,7 +1,13 @@
 from components import project_page, sidebar, home, timeline, team, sheet_page, time_allocation, cost_allocation
 import streamlit as st
-from utils import *
+from utils import create_session
 
+st.set_page_config(
+    page_title="My Streamlit App",
+    page_icon=":chart_with_upwards_trend:",
+    layout="wide",  # 'centered' or 'wide'
+    initial_sidebar_state="expanded",  # 'auto', 'expanded', 'collapsed'
+)
 
 def main():
     

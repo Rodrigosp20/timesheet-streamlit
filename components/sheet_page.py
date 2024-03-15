@@ -1,4 +1,6 @@
 import streamlit as st
+from datetime import timedelta
+import numpy as np
 from utils import * 
 
 def format_zeros(row):
@@ -233,8 +235,8 @@ def sheet_widget(project):
             
             df = df.dropna(subset="hours")
             df = df.loc[df['project'] != 'Outras Atividades']
-            
-            st.session_state.real_work = st.session_state.real_work.query('~(person == @person and project in @df["project"].unique() and date >= @contract_start_date and date <= @contract_end_date)')
+
+            st.session_state.real_work = st.session_state.real_work.query('~ (person == @person and date >= @contract_start_date and date <= @contract_end_date)')
             st.session_state.real_work = pd.concat([st.session_state.real_work, df])
 
         if not wp_sheet.empty:

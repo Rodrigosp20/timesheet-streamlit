@@ -1,5 +1,6 @@
 import streamlit as st
 from utils import *
+from itertools import product
 from streamlit_tags import st_tags
 import plotly.express as px
 
