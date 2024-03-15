@@ -93,7 +93,6 @@ def generate_sheets(project, start, end):
         planned_work = planned_work.groupby(["wp", "trl"]).sum().drop(columns="activity")
 
         planned_work.columns = planned_work.columns.map(lambda col: col.strftime("%b/%y"))
-        #print(planned_work)
         row = 23
         for wp in planned_work.index.get_level_values(0).unique():
             sheet.cell(row=row, column=3, value=wp)

@@ -1,6 +1,6 @@
 import streamlit as st
 import pickle
-from utils import *
+import pandas as pd
 
 def read_file():
     """ Load file into cache memory """

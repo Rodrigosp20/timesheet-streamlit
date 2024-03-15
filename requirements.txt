@@ -1,0 +1,8 @@
+openpyxl==3.1.2
+plotly==5.18.0
+matplotlib==3.7.2
+numpy==1.25.2
+pandas==2.1.1
+streamlit==1.31.0
+streamlit-tags==1.2.8
+xlrd==2.0.1

@@ -1,12 +1,6 @@
-from datetime import timedelta
-import datetime
-import streamlit as st
-import pandas as pd
-import numpy as np
-from streamlit_tags import st_tags
-from utils import *
-from dateutil.relativedelta import relativedelta
 from components import project_page, sidebar, home, timeline, team, sheet_page, time_allocation, cost_allocation
+import streamlit as st
+from utils import *
 
 
 def main():

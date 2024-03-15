@@ -64,8 +64,6 @@ def sheet_widget(project):
         float_columns = get_float_columns(contract_start_date, contract_end_date)
         disabled_columns = get_disabled_columns(project)
         columns_order = get_column_order(init,end)
-        print(columns_order)
-        
         
         sheet, activities, real_work, planned_work = fetch_data(project, person, contract_start_date, contract_end_date)
         
@@ -139,7 +137,6 @@ def sheet_widget(project):
         wp_sheet = pd.DataFrame(columns=sheet.columns)
 
         st.subheader("Horas Planeadas")
-        print(st.session_state.planned_work.query('activity == "1. Desenvolvimento de sistema integrado de monitorização de gases para ambiente industrial"'))
         for wp in planned_work['wp'].unique():
 
             wp_work = planned_work[planned_work['wp'] == wp]

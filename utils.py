@@ -1,10 +1,5 @@
-import datetime, calendar, pickle, base64, pandas as pd, streamlit as st, numpy as np
-from datetime import timedelta
-from itertools import product
+import datetime, calendar, pickle, base64, pandas as pd, streamlit as st
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.formatting.rule import CellIsRule
-from openpyxl.styles import Color, PatternFill, Font, Border
 import streamlit.components.v1 as components
 
 # Data Schema 
@@ -159,7 +154,6 @@ def extract_cell_colors_and_dates(file):
 
     active_color = ws['G1325'].fill.start_color.index
     deactivated_color = ws['O1326'].fill.start_color.index
-    print(deactivated_color)
     extended_color = ws['G1326'].fill.start_color.index
 
     df = df.replace(active_color, 1)

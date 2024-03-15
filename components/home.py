@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import timedelta
-from utils import *
+import pandas as pd
+from utils import reset_key,  extract_cell_colors_and_dates, get_first_date, get_last_date
 
 def create_new_project(name, start, end):
     """ Creates new empty project """
