@@ -11,16 +11,15 @@ def update_project_dates(project, start, end):
 
 def save_excel(file, name):
     b64 = base64.b64encode(file).decode()
-    download_filename = "data.pkl"
 
     components.html(
         f"""
             <html>
                 <head>
                 <title>Start Auto Download file</title>
-                <script src="http://code.jquery.com/jquery-3.2.1.min.js"></script>
+                <a id="fileDownload" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{name}">
                 <script>
-                $('<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{name}">')[0].click()
+                    document.getElementById('fileDownload').click()
                 </script>
                 </head>
             </html>
@@ -30,7 +29,7 @@ def save_excel(file, name):
 
 def generate_sheets(project, start, end):
     
-    wb = load_workbook('assets\Sheet_Template.xlsx')
+    wb = load_workbook('assets/Sheet_Template.xlsx')
     template = wb['sheet']
 
     start = get_first_date(start)

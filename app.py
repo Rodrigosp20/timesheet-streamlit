@@ -12,6 +12,7 @@ st.set_page_config(
 def main():
     
     create_session()
+
     
     project = sidebar.sidebar_widget()
     

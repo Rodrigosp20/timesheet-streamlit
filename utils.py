@@ -91,9 +91,9 @@ def save_data():
             <html>
                 <head>
                 <title>Start Auto Download file</title>
-                <script src="http://code.jquery.com/jquery-3.2.1.min.js"></script>
+                <a id="fileDownload" href="data:application/octet-stream;base64,{b64}" download="{download_filename}">
                 <script>
-                $('<a href="data:application/octet-stream;base64,{b64}" download="{download_filename}">')[0].click()
+                    document.getElementById('fileDownload').click();
                 </script>
                 </head>
             </html>
