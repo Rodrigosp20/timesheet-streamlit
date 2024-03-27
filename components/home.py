@@ -1,6 +1,8 @@
 import streamlit as st
 from datetime import timedelta
 import pandas as pd
+import numpy as np
+from utils import min_max_dates
 from utils import reset_key,  extract_cell_colors_and_dates, get_first_date, get_last_date, invalid
 
 def create_new_project(name, start, end):
