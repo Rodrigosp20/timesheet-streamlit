@@ -14,6 +14,7 @@ def read_file():
         st.session_state.sheets = data['sheets']
         st.session_state.planned_work = data['planned_work']
         st.session_state.real_work = data['real_work']
+        st.session_state.working_days = data['working_days']
     else:
         st.session_state.activities = pd.DataFrame(columns=activities_schema.keys()).astype(activities_schema)
         st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
@@ -21,7 +22,7 @@ def read_file():
         st.session_state.sheets = pd.DataFrame(columns=sheets_schema.keys()).astype(sheets_schema)
         st.session_state.planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
         st.session_state.real_work = pd.DataFrame(columns=real_work_schema.keys()).astype(real_work_schema)
-
+        st.session_state.working_days = pd.DataFrame(columns=working_days_schema.keys()).astype(working_days_schema)
 
 def sidebar_widget() -> str:
 

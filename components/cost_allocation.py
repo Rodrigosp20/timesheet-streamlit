@@ -26,9 +26,12 @@ def get_wp_costs(activities, work, planned_work, sheet):
 def cost_allocation_widget(project):
     work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
     planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
-    sheet = st.session_state.sheets.query('person in @work["person"].unique() and date >= @project["start_date"] and date <= @project["end_date"]')[["person", "date", "Jornada Diária", "Dias Úteis", "SS", "Salário"]]
+    sheet = st.session_state.sheets.query('person in @work["person"].unique() and date >= @project["start_date"] and date <= @project["end_date"]')[["person", "date", "Jornada Diária", "SS", "Salário"]]
     activities = st.session_state.activities.query('project == @project["name"]')
 
+    working_days = st.session_state.working_days.query('project == @project["name"]')
+    sheet = sheet.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
+    
     if not planned_work.empty:
         
         costs, wps_costs, wp_trl_costs = get_wp_costs(activities, work, planned_work, sheet)

@@ -9,6 +9,9 @@ def update_timeline(project, data, executed, to_adjust):
     
     st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed
     
+    if data["activity"].nunique() != len(data["activity"]):
+        return st.error("As Ativiidades tem de ter nomes únicos!")
+
     contracts = st.session_state.contracts.query('project == @project["name"]')
     if to_adjust:
         if not executed:

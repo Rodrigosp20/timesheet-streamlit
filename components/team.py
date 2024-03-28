@@ -12,11 +12,8 @@ def update_contracts(project, data):
         contract_end_date = get_last_date(contract.end_date)
 
         contract_range = pd.date_range(start= contract_start_date, end= contract_end_date, freq='MS')
-        business_days = []
-        for month_start in contract_range:
-            business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
 
-        st.session_state.sheets = pd.concat([st.session_state.sheets, pd.DataFrame({"person": contract.person, "date": contract_range, "Jornada Diária": 8, "Dias Úteis":business_days, "Faltas": 0, "Férias": 0, "Salário": 0, "SS": 23.75})])
+        st.session_state.sheets = pd.concat([st.session_state.sheets, pd.DataFrame({"person": contract.person, "date": contract_range, "Jornada Diária": 8, "Faltas": 0, "Férias": 0, "Salário": 0, "SS": 23.75})])
 
         st.session_state.real_work = st.session_state.real_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract_start_date and date <= @contract_end_date)')
         st.session_state.planned_work = st.session_state.planned_work.query('(person != @contract.person) or (project != @project["name"]) or (date >= @contract_start_date and date <= @contract_end_date)')

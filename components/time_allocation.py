@@ -35,7 +35,10 @@ def time_allocation_widget(project):
     planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
 
     contracts = st.session_state.contracts[["person", "project", "gender"]]
-    sheets = st.session_state.sheets[["person", "date", "Jornada Diária", "Dias Úteis", "Férias"]]
+    working_days = st.session_state.working_days.query('project == @project["name"]')
+    sheets = st.session_state.sheets[["person", "date", "Jornada Diária", "Férias"]]
+    sheets = sheets.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
+    
 
     if not work.empty:
         

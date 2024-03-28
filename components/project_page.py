@@ -53,6 +53,7 @@ def generate_sheets(project, start, end):
         template.column_dimensions[get_column_letter(i)].hidden
 
     contracts = st.session_state.contracts.query('project == @project["name"]')
+    working_days = st.session_state.working_days.query('project == @project["name"]')
     
     for contract in contracts.itertuples(index=False):
         sheet = wb.copy_worksheet(template)
@@ -60,6 +61,7 @@ def generate_sheets(project, start, end):
         sheet.title= contract.person
 
         df = st.session_state.sheets.query('person == @contract.person and date >= @start and date <= @end')
+        df = df.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
         real_work = st.session_state.real_work.query('person == @contract.person and date >= @start and date <= @end')
 
         project_work = real_work.query('project == @project["name"]')
@@ -151,6 +153,9 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
     end = get_last_date(end)
 
     sheets = st.session_state.sheets.query('person in @df_team["equipa"].unique() and date >= @start and date <= @end')
+    working_days = st.session_state.working_days.query('project == @project["name"]')
+    sheets = sheets.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
+    
     project_work = st.session_state.real_work.query('project == @project["name"] and date >= @start and date <= @end')
     project_work = project_work.rename(columns={'hours':'real_work'})
     planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @start and date <= @end')

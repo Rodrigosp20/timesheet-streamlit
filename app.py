@@ -12,7 +12,6 @@ st.set_page_config(
 def main():
     
     create_session()
-
     
     project = sidebar.sidebar_widget()
     
@@ -21,7 +20,6 @@ def main():
     
     tab = st.radio('', ['Projeto', 'Cronograma', 'Equipa', 'Pessoal', 'Imputação Horas', 'Custos'], index=0, horizontal=True)
     project = st.session_state.projects.query('name == @project').iloc[0]
-    
     match tab:
 
         case 'Projeto':

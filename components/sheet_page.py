@@ -32,15 +32,17 @@ def get_disabled_columns(project):
 
 def fetch_data(project, person, contract_start_date, contract_end_date):
     activities = st.session_state.activities.query('project == @project["name"]')
+    working_days = st.session_state.working_days.query('project == @project["name"]')
     sheet = st.session_state.sheets.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
     real_work = st.session_state.real_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
     planned_work = st.session_state.planned_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date and project == @project["name"]')
     
     sheet = sheet.merge(real_work.query('project == @project["name"]')[['date', 'hours']], on="date", how="left").rename(columns={'hours':'Horas Reais'})
+    sheet = sheet.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
     sheet = sheet.drop(columns='person').set_index('date')
     sheet.index = sheet.index.strftime('%b/%y')
     sheet = sheet.transpose()
-
+    print(sheet)
     return sheet, activities, real_work, planned_work
 
 
@@ -116,12 +118,15 @@ def sheet_widget(project):
             to_update['person'] = person
             
             st.session_state.sheets = st.session_state.sheets.query('(person != @person) or (date < @contract_start_date or date > @contract_end_date)')
-            st.session_state.sheets = pd.concat([st.session_state.sheets, to_update[['person', 'date', 'Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', 'Salário', 'SS', 'Custo Aproximado']]])
-
+            st.session_state.sheets = pd.concat([st.session_state.sheets, to_update[['person', 'date', 'Jornada Diária', 'Faltas', 'Férias', 'Salário', 'SS', 'Custo Aproximado']]])
+            
+            to_update['day'] = to_update['Dias Úteis']
             to_update['hours'] = to_update['Horas Reais']
             to_update['project'] = project['name']
             st.session_state.real_work = st.session_state.real_work.query('(person != @person) or (project != @project["name"]) or (date < @contract_start_date or date > @contract_end_date)')
             st.session_state.real_work = pd.concat([st.session_state.real_work, to_update[['person', 'project', 'date', 'hours']]])
+            st.session_state.working_days = st.session_state.working_days.query('project != @project["name"] or (date < @contract_start_date or date > @contract_end_date)')
+            st.session_state.working_days = pd.concat([st.session_state.working_days, to_update[['project', 'date', 'day']]])
 
         st.subheader("Sumário") #######
 

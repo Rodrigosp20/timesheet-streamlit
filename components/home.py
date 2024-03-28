@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import timedelta
 import pandas as pd
 import numpy as np
+from utils import activities_schema, working_days_schema, contracts_schema, sheets_schema, planned_work_schema, real_work_schema
 from utils import min_max_dates
 from utils import reset_key,  extract_cell_colors_and_dates, get_first_date, get_last_date, invalid
 
@@ -11,11 +12,23 @@ def create_new_project(name, start, end):
         return st.error("Projeto já existe")
 
     st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
+
+    project_range = pd.date_range(start= get_first_date(start), end= end, freq='MS')
+    business_days = []
+    for month_start in project_range:
+        business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
+    
+    st.session_state.working_days = pd.concat([st.session_state.working_days, pd.DataFrame({"project": name, "day":business_days, "date":project_range})])
     
     reset_key()
     st.rerun()
 
-def add_project(name, start, end, activities, team, sheets, planned_work, real_work):
+def check_columns(df, columns):
+    if set(columns).issubset(df.columns):
+        return df[columns]
+    raise Exception("Wrong Dataframe Format")
+
+def add_project(name, start, end, activities, team, sheets, planned_work, real_work, working_days):
     """ add existing project """
 
     if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
@@ -24,7 +37,15 @@ def add_project(name, start, end, activities, team, sheets, planned_work, real_w
     activities['project'] = name
     team['project'] = name
     planned_work['project'] = name
+    working_days['project'] = name
     real_work.loc[real_work['project'] == 'Horas Reais PRR', 'project'] = name
+
+    activities = check_columns(activities, activities_schema.keys())
+    team = check_columns(team, contracts_schema.keys())
+    planned_work = check_columns(planned_work, planned_work_schema.keys())
+    real_work = check_columns(real_work, real_work_schema.keys())
+    sheets = check_columns(sheets, sheets_schema.keys())
+    working_days = check_columns(working_days, working_days_schema.keys())
     
     st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
 
@@ -35,7 +56,8 @@ def add_project(name, start, end, activities, team, sheets, planned_work, real_w
     st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person","date"])
     st.session_state.real_work = pd.concat([st.session_state.real_work , real_work])
     st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person","project","date"])
-
+    st.session_state.working_days = pd.concat([st.session_state.working_days, working_days])
+    st.session_state.working_days = st.session_state.working_days.drop_duplicates(subset=["project","date"])
     for act in activities.itertuples(index=False):
         planned_work = planned_work.query('~ (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
 
@@ -102,6 +124,7 @@ def read_timesheet(file):
     planned_works = pd.DataFrame()
     real_works = pd.DataFrame()
     
+    first_sheet = True
     #read person sheeets
     for contract in team.itertuples():
         sheet = f'{contract.Index + 1}. {contract.person}'
@@ -117,7 +140,7 @@ def read_timesheet(file):
 
         sheet = sheet.rename(columns={
             "Jornada diária":"Jornada Diária",
-            "N.º de dias \núteis":"Dias Úteis",
+            "N.º de dias \núteis":"day",
             "Faltas (horas/mês)":"Faltas",
             "Férias (horas/mês)":"Férias",
             "Salário atualizado (€)":"Salário"
@@ -127,6 +150,10 @@ def read_timesheet(file):
         sheet["person"] = contract.person
         sheet["date"] = pd.to_datetime(sheet['date'])
 
+        if first_sheet:
+            working_days = sheet[["date", "day"]]
+            first_sheet = False
+        
         sheets = pd.concat([sheets, sheet])
 
         planned_work = df.loc[activities['activity'].unique(), contract_range]
@@ -157,7 +184,7 @@ def read_timesheet(file):
         real_works['person'] = real_works['person'].str.title()
         planned_works['person'] = planned_works['person'].str.title()
     
-    return team, activities, sheets, planned_works, real_works, start_date, end_date
+    return team, activities, sheets, planned_works, real_works, start_date, end_date, working_days
 
 def home_widget():
 
@@ -179,7 +206,7 @@ def home_widget():
 
         if file := st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx", key=f"file_uploader_{st.session_state.key}"):
 
-            team, activities, sheets, planned_work, real_work, start_date, end_date = read_timesheet(file)
+            team, activities, sheets, planned_work, real_work, start_date, end_date, working_days = read_timesheet(file)
 
             st.dataframe(team)
 
@@ -190,5 +217,5 @@ def home_widget():
             )
         
             if st.button("Adicionar Projeto", disabled= invalid(project_name, start_date, end_date)):
-                add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work)
+                add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work, working_days)
     

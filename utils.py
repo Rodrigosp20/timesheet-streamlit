@@ -30,16 +30,20 @@ contracts_schema = {
     "end_date": "datetime64[ns]",
 }
 
+working_days_schema = {
+    "project":"string",
+    "date":"datetime64[ns]",
+    "day":"int64"
+}
+
 sheets_schema = {
     "person" : "string",
     "date" : "datetime64[ns]",
     "Jornada Diária" : "int64",
-    "Dias Úteis": "int64",
     "Faltas" : "float64",
     "Férias" : "float64",
     "Salário" : "float64",
     "SS" : "float64",
-    "Custo Aproximado" : "float64",
 }
 
 real_work_schema = {
@@ -70,6 +74,7 @@ def create_session():
         st.session_state.sheets = pd.DataFrame(columns=sheets_schema.keys()).astype(sheets_schema)
         st.session_state.planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
         st.session_state.real_work = pd.DataFrame(columns=real_work_schema.keys()).astype(real_work_schema)
+        st.session_state.working_days = pd.DataFrame(columns=working_days_schema.keys()).astype(working_days_schema)
 
 def save_data():
     """ Download all data """
@@ -80,7 +85,8 @@ def save_data():
         'projects':st.session_state.projects,
         'sheets': st.session_state.sheets,
         'planned_work' : st.session_state.planned_work,
-        'real_work' : st.session_state.real_work
+        'real_work' : st.session_state.real_work,
+        'working_days': st.session_state.working_days
     })
 
     b64 = base64.b64encode(object_to_download).decode()
