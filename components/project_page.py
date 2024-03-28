@@ -9,6 +9,14 @@ from openpyxl.formatting.rule import CellIsRule
 def update_project_dates(project, start, end):
     st.session_state.projects.loc[st.session_state.projects['name'] == project["name"], ["start_date", "end_date"]] = [start, end]
 
+    project_range = pd.date_range(start= get_first_date(start), end= end, freq='MS')
+    business_days = []
+    for month_start in project_range:
+        business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
+    
+    st.session_state.working_days = pd.concat([st.session_state.working_days, pd.DataFrame({"project": project["name"], "day":business_days, "date":project_range})])
+    st.session_state.working_days.drop_duplicates(subset=["project", "date"])
+    
 def save_excel(file, name):
     b64 = base64.b64encode(file).decode()
 

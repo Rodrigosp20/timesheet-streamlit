@@ -42,7 +42,6 @@ def fetch_data(project, person, contract_start_date, contract_end_date):
     sheet = sheet.drop(columns='person').set_index('date')
     sheet.index = sheet.index.strftime('%b/%y')
     sheet = sheet.transpose()
-    print(sheet)
     return sheet, activities, real_work, planned_work
 
 
@@ -187,7 +186,6 @@ def sheet_widget(project):
                         "Atividade",
                         width="medium",
                         required=True,
-                        disabled=True
                     )
                 }
             )
