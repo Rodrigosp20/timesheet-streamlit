@@ -156,7 +156,7 @@ def generate_sheets(project, start, end):
 
     return wb
 
-def generate_pay_sheets(project, file, start, end, df_team, df_trl):
+def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
     start = get_first_date(start)
     end = get_last_date(end)
 
@@ -171,11 +171,12 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
     sheets['horas_trabalhaveis'] = sheets['Jornada Diária'] * sheets['Dias Úteis']
     
     planned_work = planned_work.merge(st.session_state.activities[['wp', 'trl', 'activity']], on="activity", how="left")
-    sum_wp = planned_work.groupby(["wp","person"])['hours'].sum().reset_index()
+    
+    sum_wp = planned_work.groupby(["wp","person","date"])['hours'].sum().reset_index()
     sum_wp = sum_wp.rename(columns={'hours':'wp_sum'})    
 
     planned_work = planned_work.merge(project_work[["person", "date", "real_work"]], on=["person", "date"], how="left")
-    planned_work = planned_work.merge(sum_wp[["wp", "person", "wp_sum"]], on=["person", "wp"], how="left")
+    planned_work = planned_work.merge(sum_wp[["wp", "person", "date", "wp_sum"]], on=["person", "wp", "date"], how="left")
     planned_work = planned_work.merge(sheets[["date", "person", "horas_trabalhaveis"]], on=["person", "date"], how="left")
 
     planned_work['res'] = ((planned_work['hours'] / planned_work['wp_sum'] * planned_work['real_work']) / planned_work['horas_trabalhaveis']).fillna(0)
@@ -186,6 +187,9 @@ def generate_pay_sheets(project, file, start, end, df_team, df_trl):
     df_team = df_team.merge(df_trl, on=["wp", "trl"], how="left")
     df_team = df_team[~ pd.isna(df_team['investimento'])]
     
+    if len(order_by) > 0:
+        df_team = df_team.sort_values(by=order_by)
+
     wb = load_workbook(file)
     ws = wb['Mapa']
 
@@ -246,7 +250,10 @@ def project_widget(project):
 
         if template := st.file_uploader("Template", type=".xlsx", accept_multiple_files=False):
             df_team = pd.read_excel(template ,sheet_name="Referências", usecols="H", header=3, names=["tecnico"]).dropna()
-            df_team['equipa'] = None
+            project_persons = st.session_state.contracts.query('project == @project["name"]')["person"].unique()
+
+            
+            df_team['equipa'] = project_persons
 
             df_team = st.data_editor(
                 df_team,
@@ -280,10 +287,19 @@ def project_widget(project):
                 disabled=['investimento'],
                 hide_index=True,
                 use_container_width=True
-            )                    
+            )    
 
+            options = {
+                "Pessoa": "tecnico",
+                "Nº Ordem": "investimento",
+                "Data": "date"
+            }
+
+            order_by = st.multiselect('Ordernar Por', options.keys())         
+            order_by = [options[option] for option in order_by]
+            
         if st.button("Gerar Excel", key="pay_excel", use_container_width=True , disabled=False if template else True):
-            wb = generate_pay_sheets(project, template, start_date, end_date, df_team, df_trl)
+            wb = generate_pay_sheets(project, template, order_by, start_date, end_date, df_team, df_trl)
 
             virtual_workbook = BytesIO()
             wb.save(virtual_workbook)
