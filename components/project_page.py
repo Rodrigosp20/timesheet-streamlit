@@ -5,6 +5,15 @@ import numpy as np
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill, Font
 from openpyxl.formatting.rule import CellIsRule
+from streamlit_modal import Modal
+
+def delete_project(project):
+    st.session_state.projects = st.session_state.projects.query('name != @project["name"]')
+    st.session_state.activities = st.session_state.activities.query('project != @project["name"]')
+    st.session_state.contracts = st.session_state.contracts.query('project != @project["name"]')
+    st.session_state.working_days = st.session_state.contracts.query('project != @project["name"]')
+    st.session_state.real_work = st.session_state.real_work.query('project != @project["name"]')
+    st.session_state.planned_work = st.session_state.planned_work.query('project != @project["name"]')
 
 def update_project_dates(project, start, end):
     st.session_state.projects.loc[st.session_state.projects['name'] == project["name"], ["start_date", "end_date"]] = [start, end]
@@ -212,13 +221,32 @@ def project_widget(project):
         end_date = st.date_input("Data de Termino", key=f"project_date_final_{st.session_state.key}", value=project['end_date'], format="DD/MM/YYYY", min_value=project['end_date'])
 
         _,col2 = st.columns([0.55,0.45])
-        col1, col2 = col2.columns(2)
+        col1, col2, col3 = col2.columns(3)
 
         if col1.button("Guardar Alterações", key="save_project_dates", disabled=invalid(start_date, end_date)):
             update_project_dates(project, start_date, end_date)
 
         if col2.button("Descartar Alterações", key="discard_project_dates", on_click=reset_key):
             st.rerun()
+        
+        modal = Modal("Eliminar Projeto ", key="delete_project_modal")
+        if col3.button("Eliminar Projeto", key="delete_project"):
+            modal.open()
+        
+        if modal.is_open():
+            with modal.container():
+                st.write('<p style="text-align: center; margin-bottom:40px;">Se continuar o projeto será eliminado e não será possível recuperá-lo, continuar mesmo assim ?</p>', unsafe_allow_html=True)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Eliminar", use_container_width=True):
+                        delete_project(project)
+                        modal.close()
+                with col2:
+                    if st.button("Cancelar", use_container_width=True):
+                        modal.close()
+            
+        
 
     with st.expander("Gerar Folhas de Afetação"):
         start_date, end_date = st.slider(

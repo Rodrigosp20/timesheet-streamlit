@@ -7,6 +7,9 @@ import plotly.express as px
 
 def update_timeline(project, data, executed, to_adjust):
     
+    if ((data['start_date'] >= data['end_date']) | (data['real_start_date'] >= data['real_end_date'])).any():
+        return st.error("Atividades com datas inválidas")
+
     st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed
     
     if data["activity"].nunique() != len(data["activity"]):
@@ -183,7 +186,7 @@ def timeline_widget(project):
     st.subheader("Atividades do Projeto")
     for wp in wps:
 
-        with st.expander(wp):                    
+        with st.expander(wp, expanded=True):                    
             wp_df = activities.query('wp == @wp')
 
             wp_acts = st.data_editor(
@@ -210,7 +213,7 @@ def timeline_widget(project):
                         required=True
                     ),
                     "end_date": st.column_config.DateColumn(
-                        "Data de Termino [Planeada]",
+                        "Data de Conclusão [Planeada]",
                         max_value=project["end_date"],
                         default=project["end_date"],
                         format="DD/MM/YYYY",
@@ -225,7 +228,7 @@ def timeline_widget(project):
                         required=True
                     ),
                     "real_end_date": st.column_config.DateColumn(
-                        "Data de Termino [Real]",
+                        "Data de Conclusão [Real]",
                         min_value=project["start_date"] if not project['executed'] else project['executed'],
                         max_value=project["end_date"],
                         default=project["end_date"],
@@ -236,6 +239,7 @@ def timeline_widget(project):
                 use_container_width=True,
                 num_rows='dynamic'
             )
+
             wp_acts[['wp', 'project']] = [wp, project['name']]
             to_update = pd.concat([to_update, wp_acts])
             

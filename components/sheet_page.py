@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import timedelta
+from datetime import timedelta, datetime
 import numpy as np
 from utils import * 
 
@@ -29,6 +29,28 @@ def get_disabled_columns(project):
     if project['executed']:
         return [date for date in date_range(project["start_date"], project['executed'])]
     return []
+
+@st.cache_data
+def get_salary_table(data):
+    df = {"Data":[], "Salário":[], "SS":[]}
+
+    previous_value = -1
+
+    # Iterate over the DataFrame
+    for col in data:
+        value = data[col].loc['Salário']
+
+        if value != previous_value:
+            df['Data'].append(col)
+            df['Salário'].append(value)
+            df["SS"].append(data[col].loc["SS"])
+
+        previous_value = value
+
+    # Create a new DataFrame with the first date of each sequence
+    df =  pd.DataFrame(df)
+    df["Data"] = pd.to_datetime(df["Data"], format="%b/%y")
+    return df
 
 def fetch_data(project, person, contract_start_date, contract_end_date):
     activities = st.session_state.activities.query('project == @project["name"]')
@@ -92,6 +114,34 @@ def sheet_widget(project):
 
         st.subheader("Folha Salarial") ########
 
+        with st.expander("Tabela Salarial"):
+            salary_df = st.data_editor(
+                get_salary_table(sheet.loc[["Salário", "SS"]]),
+                key=f"salary_table_{st.session_state.key}",
+                column_config={
+                    "Data":st.column_config.DateColumn("Data", format="MMM/YY", min_value=contract_start_date, max_value=contract_end_date, required=True),
+                    "Salário":st.column_config.NumberColumn("Salário", format="%.2f €", required=True),
+                    "SS":st.column_config.NumberColumn("SS", format="%.2f", default=23.75,  required=True)
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows='dynamic'
+            )
+
+            if st.button("Aplicar Alterações", use_container_width=True):
+                salary_df = salary_df.sort_values(by="Data")
+                for row in salary_df.itertuples(index=False):
+                    date = np.datetime64(get_first_date(row.Data))
+                    contract_end_date = np.datetime64(contract_end_date)
+
+                    st.session_state.sheets.loc[(st.session_state.sheets['person'] == person) & 
+                            (st.session_state.sheets['date'] >= date) & 
+                            (st.session_state.sheets['date'] <= contract_end_date), 
+                            ["Salário", "SS"]] = [row.Salário, row.SS]
+                    print(st.session_state.sheets.query('person == @person and date >= @date and date <= @contract_end_date'))
+                
+                st.rerun()
+
         modifications.loc[['Salário','SS']] = st.data_editor(
             sheet.loc[['Salário', 'SS']],
             key = f"{person}_mon_sheet_{st.session_state.key}",
@@ -129,12 +179,15 @@ def sheet_widget(project):
 
         st.subheader("Sumário") #######
 
+
         st.dataframe(
             modifications.loc[['Horas Trabalhadas', 'FTE', 'Custo Aproximado']].style.format("{:.2f}").map(format_zeros),
             use_container_width=True,
             column_order=columns_order,
             column_config=float_columns
         )
+
+        wp_sum_container = st.container()
 
         planned_work = planned_work.merge(activities[['activity', "wp", 'trl']], on="activity", how="left")
         planned_work = planned_work.drop(columns=['person', 'project'])
@@ -163,6 +216,17 @@ def sheet_widget(project):
             )
             
             wp_sheet = pd.concat([wp_sheet, wp_sheet_modifications])
+        
+
+        summary_wp = wp_sheet.reset_index(names="activity").merge(activities[["wp", "activity"]], how="left", on="activity")
+        df_sum = summary_wp.groupby("wp").sum()
+        df_sum.loc["Total"] =  summary_wp.sum()
+        df_sum = df_sum.drop("activity", axis=1)
+       
+        wp_sum_container.dataframe(
+            df_sum,
+            column_order=columns_order
+        )
 
         other_activities = real_work.query('date >= @contract_start_date and date <= @contract_end_date')[['date','hours', 'project']]
         other_activities['date'] = other_activities['date'].apply(lambda x: pd.to_datetime(x).strftime('%b/%y'))
@@ -306,6 +370,7 @@ def sheet_widget(project):
 
             st.dataframe(
                 df,
+                column_order=columns_order,
                 column_config={
                     "wp":st.column_config.TextColumn(
                         "WP",

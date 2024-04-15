@@ -10,6 +10,9 @@ def create_new_project(name, start, end):
     """ Creates new empty project """
     if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
         return st.error("Projeto já existe")
+    
+    if start >= end:
+        return st.error("Datas inválidas")
 
     st.session_state.projects.loc[len(st.session_state.projects)] = [name, start, end, None]
 
@@ -34,6 +37,9 @@ def add_project(name, start, end, activities, team, sheets, planned_work, real_w
     if not st.session_state.projects[st.session_state.projects['name'] == name].empty:
         return st.error("Projeto já existe")
     
+    if ((activities['start_date'] >= activities['end_date']) | (activities['real_start_date'] >= activities['real_end_date'])).any():
+        return st.error("Atividades com datas inválidas")
+
     activities['project'] = name
     team['project'] = name
     planned_work['project'] = name
@@ -79,8 +85,11 @@ def read_timesheet(file):
     
     df_colors, start_date, end_date = extract_cell_colors_and_dates(file)
 
-    start_date = get_first_date(start_date)
-    end_date = get_last_date(end_date)
+    try:
+        start_date = get_first_date(start_date)
+        end_date = get_last_date(end_date)
+    except:
+        return "Datas do Cronograma Inválidas"
 
     team.loc[pd.isna(team['end_date']), "end_date"] = end_date
 
@@ -105,15 +114,21 @@ def read_timesheet(file):
         activities = pd.concat([activities, wp_activities])
 
     activities = pd.merge(activities, df_colors, left_on='line', right_index=True)
-    activities[['start_date', 'end_date']] = activities.apply(lambda row: min_max_dates(row, -1, 1), axis=1, result_type='expand')
-    activities[['real_start_date', 'real_end_date']] = activities.apply(lambda row: min_max_dates(row, 2, 1), axis=1, result_type='expand')
-   
+    try:
+        activities[['start_date', 'end_date']] = activities.apply(lambda row: min_max_dates(row, -1, 1), axis=1, result_type='expand')
+        activities[['real_start_date', 'real_end_date']] = activities.apply(lambda row: min_max_dates(row, 2, 1), axis=1, result_type='expand')
+    except:
+        return "Erro a ler o cronograma"
+    
     activities.loc[pd.isna(activities['start_date']), "start_date"] = start_date
     activities.loc[pd.isna(activities['end_date']), "end_date"] = end_date
     activities.loc[pd.isna(activities['real_start_date']), "real_start_date"] = start_date
     activities.loc[pd.isna(activities['real_end_date']), "real_end_date"] = end_date
 
-    activities["trl"] = "TRL " + activities['trl']
+    try:
+        activities["trl"] = "TRL " + activities['trl']
+    except:
+        pass
         
     activities = activities[['activity', 'trl','wp','start_date','end_date','real_start_date','real_end_date']]
     
@@ -129,13 +144,20 @@ def read_timesheet(file):
     for contract in team.itertuples():
         sheet = f'{contract.Index + 1}. {contract.person}'
 
-        df = pd.read_excel(file, sheet_name=sheet, header=3).iloc[:,3:]
-    
+        try:
+            df = pd.read_excel(file, sheet_name=sheet, header=3).iloc[:,3:]
+        except:
+            return f"Não foi encontrada a folha {sheet}"
+        
         df = df.rename(columns={df.columns[0]: 'date'})
         df = df.set_index("date")
         
         contract_range = pd.date_range(start= get_first_date(contract.start_date), end= contract.end_date, freq="MS")
-        sheet = df.loc[['Jornada diária', 'N.º de dias \núteis','Faltas (horas/mês)','Férias (horas/mês)','Salário atualizado (€)','SS'], contract_range].fillna(0)
+        try:
+            sheet = df.loc[['Jornada diária', 'N.º de dias \núteis','Faltas (horas/mês)','Férias (horas/mês)','Salário atualizado (€)','SS'], contract_range].fillna(0)
+        except:
+            return f"Folha {sheet}: Erro na leitura da folha de horas"
+        
         sheet = sheet.transpose().reset_index(names="date")
 
         sheet = sheet.rename(columns={
@@ -155,8 +177,12 @@ def read_timesheet(file):
             first_sheet = False
         
         sheets = pd.concat([sheets, sheet])
-
-        planned_work = df.loc[activities['activity'].unique(), contract_range]
+        
+        try:
+            planned_work = df.loc[activities['activity'].unique(), contract_range]
+        except:
+            return f"Folha {sheet}: Não foram encontradas as atividades"
+        
         planned_work = planned_work[~planned_work.index.duplicated()].fillna(0)
 
         planned_work = planned_work.reset_index(names="activity").melt(id_vars='activity', var_name='date', value_name='hours')
@@ -164,8 +190,11 @@ def read_timesheet(file):
         planned_work["date"] = pd.to_datetime(planned_work['date'])
 
         planned_works = pd.concat([planned_works, planned_work])
-
-        real_work = df.loc[['Horas Reais PRR'], contract_range]
+        
+        try:
+            real_work = df.loc[['Horas Reais PRR'], contract_range]
+        except:
+            return f"Folha {sheet}: Não foi encontrado as Horas Reais [Horas Reais PRR]"
 
         index_position = df.index.get_loc('Outras atividades')
         other_activities = df.iloc[index_position-3:index_position].loc[:, contract_range]
@@ -193,8 +222,8 @@ def home_widget():
     with st.expander("Adicionar Projeto Vazio"):
         project_name = st.text_input("Nome do projeto", key=f"project_name_{st.session_state.key}")
 
-        start_date = st.date_input("Data de inicio", format="DD/MM/YYYY", value=None)
-        end_date = st.date_input("Data de encerramento", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
+        start_date = st.date_input("Data de inicio", key=f"start_date_project_{st.session_state.key}", format="DD/MM/YYYY", value=None)
+        end_date = st.date_input("Data de encerramento", key=f"end_date_project_{st.session_state.key}", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
 
         
         if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
@@ -205,17 +234,78 @@ def home_widget():
         project_name = st.text_input("Nome do projeto", key=f"exist_project_name_{st.session_state.key}")
 
         if file := st.file_uploader("Timesheet", accept_multiple_files=False, type="xlsx", key=f"file_uploader_{st.session_state.key}"):
+            
+            result = read_timesheet(file)        
+            if type(result) != str:
+                team, activities, sheets, planned_work, real_work, start_date, end_date, working_days = result
 
-            team, activities, sheets, planned_work, real_work, start_date, end_date, working_days = read_timesheet(file)
+                st.header("Equipa do Projeto")
 
-            st.dataframe(team)
+                st.dataframe(
+                    team,
+                    column_config={
+                        "profile":st.column_config.TextColumn("Perfil"),
+                        "person":st.column_config.TextColumn("Pessoa"),
+                        "gender":st.column_config.TextColumn("Género"),
+                        "start_date":st.column_config.DateColumn("Data de Inicio", format="DD/MM/YYYY"),
+                        "end_date":st.column_config.DateColumn("Data de Conclusão", format="DD/MM/YYYY"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
 
-            st.data_editor(
-                activities,
-                column_order=("wp", "activity", "trl","start_date","end_date","real_start_date","real_end_date", "project"),
-                hide_index=True
-            )
-        
-            if st.button("Adicionar Projeto", disabled= invalid(project_name, start_date, end_date)):
-                add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work, working_days)
+                st.header("Atividades do Projeto")
+
+                activities = st.data_editor(
+                    activities,
+                    column_order=("wp", "activity", "trl","start_date","end_date","real_start_date","real_end_date", "project"),
+                    column_config={
+                        "wp":st.column_config.TextColumn("WP",disabled=True),
+                        "activity": st.column_config.TextColumn(
+                            "Atividade",
+                            required=True,
+                            width="medium",
+                        ),
+                        "trl": st.column_config.SelectboxColumn(
+                            "TRL",
+                            options=['TRL 3-4', 'TRL 5-9'],
+                            required=True
+                        ),
+                        "start_date": st.column_config.DateColumn(
+                            "Data de Inicio [Planeada]",
+                            min_value=start_date,
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "end_date": st.column_config.DateColumn(
+                            "Data de Conclusão [Planeada]",
+                            max_value=end_date,
+                            default=end_date,
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "real_start_date": st.column_config.DateColumn(
+                            "Data de Inicio [Real]",
+                            min_value=start_date,
+                            max_value=end_date,
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "real_end_date": st.column_config.DateColumn(
+                            "Data de Conclusão [Real]",
+                            min_value=start_date,
+                            max_value=end_date,
+                            format="DD/MM/YYYY",
+                            required=True
+                        )
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            
+                if st.button("Adicionar Projeto", disabled= invalid(project_name, start_date, end_date), use_container_width=True):
+                    add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work, working_days)
+            else:
+                st.error(result)
+            
     

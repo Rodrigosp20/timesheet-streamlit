@@ -61,13 +61,22 @@ planned_work_schema = {
     "hours" : "int64"
 }
 
-def create_session():
+def create_session(reset=False):
     """ Initialize streamlit session variables """
     
     if 'key' not in st.session_state:
         st.session_state.key = 0
     
-    if 'activities' not in st.session_state:
+    if 'file_id' not in st.session_state or reset:
+        if reset:
+            st.session_state.file_id = (st.session_state.file_id + 1) % 2 
+        else:
+            st.session_state.file_id = 0
+    
+    if 'company_name' not in st.session_state or reset:
+        st.session_state.company_name = ""
+
+    if 'activities' not in st.session_state or reset:
         st.session_state.activities = pd.DataFrame(columns=activities_schema.keys()).astype(activities_schema)
         st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
         st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
@@ -90,7 +99,7 @@ def save_data():
     })
 
     b64 = base64.b64encode(object_to_download).decode()
-    download_filename = "data.pkl"
+    download_filename = st.session_state.company_name+".pkl"
 
     components.html(
         f"""
@@ -177,4 +186,4 @@ def min_max_dates(row, value1, value2):
             dates.append(col)
     if len(dates) == 0:
         return None, None
-    return min(dates), max(dates)
+    return get_first_date(min(dates)), get_last_date(max(dates))

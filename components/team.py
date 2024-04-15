@@ -50,7 +50,7 @@ def team_widget(project):
             "profile": st.column_config.TextColumn("Perfil"),
             "gender": st.column_config.SelectboxColumn("Gênero", options=['M', 'F']),
             "start_date": st.column_config.DateColumn("Data de Inicio", format="DD/MM/YYYY", min_value=project["start_date"], max_value=project["end_date"], default=project["start_date"]),
-            "end_date": st.column_config.DateColumn("Data de Término", format="DD/MM/YYYY", min_value=project["start_date"], max_value=project["end_date"], default=project["end_date"])
+            "end_date": st.column_config.DateColumn("Data de Conclusão", format="DD/MM/YYYY", min_value=project["start_date"], max_value=project["end_date"], default=project["end_date"])
         },
         use_container_width=True,
         num_rows="dynamic"
