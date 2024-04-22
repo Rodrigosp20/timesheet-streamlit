@@ -86,6 +86,8 @@ def generate_sheets(project, start, end):
 
         other_work = other_work.sort_values(by="project")
 
+        sheet["A1"] = contract.person
+
         row = 15
         for other_project in other_work['project'].unique():
             sheet.cell(row=row, column=4, value=other_project)
