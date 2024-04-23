@@ -190,7 +190,7 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
     planned_work = planned_work.merge(sum_wp[["wp", "person", "date", "wp_sum"]], on=["person", "wp", "date"], how="left")
     planned_work = planned_work.merge(sheets[["date", "person", "horas_trabalhaveis"]], on=["person", "date"], how="left")
 
-    planned_work['res'] = ((planned_work['hours'] / planned_work['wp_sum'] * planned_work['real_work']) / planned_work['horas_trabalhaveis']).fillna(0)
+    planned_work['res'] = ((planned_work['hours'] / planned_work['wp_sum'].replace(0, np.nan) * planned_work['real_work']) / planned_work['horas_trabalhaveis']).fillna(0)
     df_team = df_team.merge(planned_work[["person", "wp", "trl", "date", "res"]], left_on="equipa", right_on="person")
     df_team = df_team.groupby(["tecnico", "wp", "trl", "date"])["res"].sum().reset_index()
     df_team = df_team[df_team['res'] > 0]
