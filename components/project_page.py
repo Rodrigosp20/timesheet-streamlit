@@ -44,6 +44,22 @@ def save_excel(file, name):
         height=0,
     )
 
+def get_salary_info(person, start, end):
+
+    sheet = st.session_state.sheets.query('person == @person and date >= @start and date <= @end').sort_values(by="date")
+    
+    previous_value = -1
+    salary = []
+    for d in sheet.itertuples(index=False):
+        value = d.Salário
+
+        if value != previous_value:
+            salary.append((value, d.date))
+
+        previous_value = value
+
+    return salary
+
 def generate_sheets(project, start, end):
     
     wb = load_workbook('assets/Sheet_Template.xlsx')
@@ -72,7 +88,25 @@ def generate_sheets(project, start, end):
     contracts = st.session_state.contracts.query('project == @project["name"]')
     working_days = st.session_state.working_days.query('project == @project["name"]')
     
+    person_line = 9
     for contract in contracts.itertuples(index=False):
+        team_ws = wb['Equipa de projeto']
+
+        salary = get_salary_info(contract.person, project["start_date"], project["end_date"])
+        team_ws.cell(row=person_line, column=3, value= contract.profile)
+        team_ws.cell(row=person_line, column=4, value= contract.person)
+        team_ws.cell(row=person_line, column=5, value= contract.gender)
+        team_ws.cell(row=person_line, column=6, value= contract.start_date)
+        
+        if project["end_date"] != contract.end_date:
+            team_ws.cell(row=person_line, column=7, value= contract.end_date)
+
+        for i, info in enumerate(salary, start=0):
+            j = 2 * i
+
+            team_ws.cell(row=person_line, column=9 + j, value= info[0])
+            team_ws.cell(row=person_line, column=9 + j + 1, value= info[1])
+
         sheet = wb.copy_worksheet(template)
 
         sheet.title= contract.person
@@ -162,6 +196,11 @@ def generate_sheets(project, start, end):
         blueFill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
         blueFont = Font(color="0070C0", name="Aptos Narrow", bold=True)
         sheet.conditional_formatting.add('E23:BL42', CellIsRule('greaterThan', formula=['0'], fill=blueFill, font=blueFont))
+    
+        person_line +=1
+
+    for row in range(person_line, 68 + 1):
+        team_ws.row_dimensions[row].hidden = True
 
     del wb["sheet"]
 
@@ -190,7 +229,6 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
     planned_work = planned_work.merge(sum_wp[["person", "date", "wp_sum"]], on=["person", "date"], how="left")
     planned_work = planned_work.merge(sheets[["date", "person", "horas_trabalhaveis"]], on=["person", "date"], how="left")
     
-
     planned_work['res'] = ((planned_work['hours'] / planned_work['wp_sum'].replace(0, np.nan) * planned_work['real_work']).replace(0,np.nan) / planned_work['horas_trabalhaveis']).fillna(0)
     
     df_team = df_team.merge(planned_work[["person", "wp", "trl", "date", "res"]], left_on="equipa", right_on="person")
@@ -212,9 +250,8 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
         ws[f'D{i}'] = val.tecnico
         ws[f'E{i}'] = '{}/{}'.format(val.date.month, val.date.year)
         ws[f'G{i}'] = val.res
-    
+
     return wb
-    # return None
 
 def project_widget(project):
     
@@ -263,8 +300,9 @@ def project_widget(project):
         )
         
         if st.button("Gerar Excel", use_container_width=True):
+            
             wb = generate_sheets(project, start_date, end_date)
-        
+
             virtual_workbook = BytesIO()
             wb.save(virtual_workbook)
             virtual_workbook.seek(0)
