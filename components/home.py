@@ -22,6 +22,7 @@ def create_new_project(name, start, end):
         business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
     
     st.session_state.working_days = pd.concat([st.session_state.working_days, pd.DataFrame({"project": name, "day":business_days, "date":project_range})])
+    st.session_state.working_days = st.session_state.working_days.drop_duplicates(subset=["project","date"])
     
     reset_key()
     st.rerun()

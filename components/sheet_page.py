@@ -55,6 +55,8 @@ def get_salary_table(data):
 def fetch_data(project, person, contract_start_date, contract_end_date):
     activities = st.session_state.activities.query('project == @project["name"]')
     working_days = st.session_state.working_days.query('project == @project["name"]')
+    working_days = working_days.drop_duplicates(subset=["project","date"])
+
     sheet = st.session_state.sheets.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
     real_work = st.session_state.real_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date')
     planned_work = st.session_state.planned_work.query('person == @person and date >= @contract_start_date and date <= @contract_end_date and project == @project["name"]')
@@ -63,6 +65,7 @@ def fetch_data(project, person, contract_start_date, contract_end_date):
     sheet = sheet.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
     sheet = sheet.drop(columns='person').set_index('date')
     sheet.index = sheet.index.strftime('%b/%y')
+    
     sheet = sheet.transpose()
     return sheet, activities, real_work, planned_work
 
@@ -93,6 +96,7 @@ def sheet_widget(project):
         sheet, activities, real_work, planned_work = fetch_data(project, person, contract_start_date, contract_end_date)
         
         st.subheader("Folha de Horas") #########
+        # print(st.session_state.sheets.query('person == "José Dias"'))
 
         modifications = st.data_editor(
             sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]],
@@ -138,7 +142,7 @@ def sheet_widget(project):
                             (st.session_state.sheets['date'] >= date) & 
                             (st.session_state.sheets['date'] <= contract_end_date), 
                             ["Salário", "SS"]] = [row.Salário, row.SS]
-                    print(st.session_state.sheets.query('person == @person and date >= @date and date <= @contract_end_date'))
+                    # print(st.session_state.sheets.query('person == @person and date >= @date and date <= @contract_end_date'))
                 
                 st.rerun()
 
