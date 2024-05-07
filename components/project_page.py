@@ -323,8 +323,10 @@ def project_widget(project):
             df_team = pd.read_excel(template ,sheet_name="Referências", usecols="H", header=3, names=["tecnico"]).dropna()
             project_persons = st.session_state.contracts.query('project == @project["name"]')["person"].unique()
 
-            
-            df_team['equipa'] = project_persons
+            try:
+                df_team['equipa'] = project_persons 
+            except:
+                pass
 
             df_team = st.data_editor(
                 df_team,

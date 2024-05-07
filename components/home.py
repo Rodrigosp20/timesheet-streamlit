@@ -224,7 +224,6 @@ def home_widget():
 
         start_date = st.date_input("Data de inicio", key=f"start_date_project_{st.session_state.key}", format="DD/MM/YYYY", value=None)
         end_date = st.date_input("Data de encerramento", key=f"end_date_project_{st.session_state.key}", format="DD/MM/YYYY", value=None, min_value= start_date + timedelta(days=1, weeks=4) if start_date else None)
-
         
         if st.button("Criar Projeto", disabled= invalid(project_name, start_date, end_date)):
             create_new_project(project_name, start_date, end_date)

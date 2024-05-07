@@ -5,6 +5,9 @@ from utils import *
 def update_contracts(project, data):
 
     activities = st.session_state.activities.query('project == @project["name"]')
+
+    data['start_date'] = pd.to_datetime(data['start_date']).dt.date
+    data['end_date'] = pd.to_datetime(data['end_date']).dt.date
     
     for contract in data.itertuples():
 
@@ -38,6 +41,7 @@ def update_contracts(project, data):
     st.rerun()
 
 def team_widget(project):
+    
     contracts = st.session_state.contracts
     project_contracts = st.session_state.contracts.query('project == @project["name"]')
     
