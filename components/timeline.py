@@ -4,8 +4,6 @@ from itertools import product
 from streamlit_tags import st_tags
 import plotly.express as px
 
-
-
 def update_timeline(project, data, executed, to_adjust):
     
     data['start_date'] = pd.to_datetime(data['start_date']).dt.date
@@ -30,7 +28,7 @@ def update_timeline(project, data, executed, to_adjust):
     if executed and (executed < project['start_date'] or executed > project['end_date']):
         return set_notification("error", "Data de execução inválida!")
     
-    st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed.date()
+    st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed.date() if executed else None
     
     contracts = st.session_state.contracts.query('project == @project["name"]')
     if to_adjust:

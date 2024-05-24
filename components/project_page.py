@@ -5,7 +5,6 @@ import numpy as np
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill, Font
 from openpyxl.formatting.rule import CellIsRule
-from streamlit_modal import Modal
 
 def delete_project(project):
     st.session_state.projects = st.session_state.projects.query('name != @project["name"]')
@@ -251,9 +250,7 @@ def project_widget(project):
         if undo:
             reset_key()
             st.rerun()
-        
-        modal = Modal("Eliminar Projeto ", key="delete_project_modal")
-        
+                
         if st.button("Eliminar Projeto", key="delete_project",use_container_width=True):
             def action():
                 delete_project(project)

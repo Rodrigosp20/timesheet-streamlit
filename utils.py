@@ -177,6 +177,9 @@ def reset_key():
     st.rerun()
 
 def get_first_date(date):
+    if not date:
+        return None
+    
     return datetime.date(date.year, date.month, 1)
 
 def get_last_date(date):
@@ -240,24 +243,6 @@ def get_dialog(title:str, paragraph:str, action):
     
     if c2.button("Cancelar", use_container_width=True):
         st.rerun()
-        
-
-def modal_warning(modal, text="Irá perder trabalho não guardado, continuar mesmo assim?"):
-    if modal.is_open():
-        with modal.container():
-            st.write(f'<p style="text-align: center; margin-bottom:40px;">{text}</p>', unsafe_allow_html=True)                
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Eliminar", use_container_width=True):
-                    create_session(reset=True)
-                    modal.close()
-                    st.rerun()
-
-            with col2:
-                if st.button("Cancelar", use_container_width=True):
-                    modal.close()
-
 
 def get_topbar(title:str, buttons=True) ->tuple[bool, bool] | None:
     with st.container(border= True):
@@ -332,3 +317,34 @@ def fade_notification():
 
         notification_container = None
         st.session_state.notification = None 
+
+def sync_dataframes():
+    if 'run' not in st.session_state:
+        st.session_state.run = 0
+    else:
+        st.session_state.run = (st.session_state.run + 1) % 2
+
+    js =f"""
+        <script>
+        hash = "{st.session_state.run}";
+        tables = window.parent.document.querySelectorAll('.dvn-scroller');
+
+        isSyncingScroll = false;
+
+        tables.forEach((table, index) => {{
+            table.addEventListener('scroll', function() {{
+                if (!isSyncingScroll) {{
+                    isSyncingScroll = true;
+                    tables.forEach((otherTable, otherIndex) => {{
+                        if (index !== otherIndex) {{
+                            otherTable.scrollLeft = table.scrollLeft;
+                        }}
+                    }});
+                    isSyncingScroll = false;
+                }}
+            }});
+        }});
+        </script>
+    """
+    
+    components.html(js, height=0)

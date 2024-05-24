@@ -73,38 +73,7 @@ def fetch_data(project, person, start_date, end_date):
     sheet = sheet.transpose()
     return sheet, activities, real_work, planned_work
 
-def sync_dataframes():
-    js =f"""
-        <script>
-        hash = "{st.session_state.run}";
-        tables = window.parent.document.querySelectorAll('.dvn-scroller');
-
-        isSyncingScroll = false;
-
-        tables.forEach((table, index) => {{
-            table.addEventListener('scroll', function() {{
-                if (!isSyncingScroll) {{
-                    isSyncingScroll = true;
-                    tables.forEach((otherTable, otherIndex) => {{
-                        if (index !== otherIndex) {{
-                            otherTable.scrollLeft = table.scrollLeft;
-                        }}
-                    }});
-                    isSyncingScroll = false;
-                }}
-            }});
-        }});
-        </script>
-    """
-    
-    components.html(js, height=0)
-
 def sheet_widget(project):
-
-    if 'run' not in st.session_state:
-        st.session_state.run = 0
-    else:
-        st.session_state.run = (st.session_state.run + 1) % 2
 
     contracts = st.session_state.contracts.query('project == @project["name"]')
 
@@ -117,15 +86,17 @@ def sheet_widget(project):
         
         #Filter Start and End date
         filter_start, filter_end = st.slider("", min_value=get_first_date(project["start_date"]), max_value=project["end_date"], format="MMMM/YYYY", value=(project["start_date"], project["end_date"]), step=timedelta(weeks=4))
+        disabled_columns = get_disabled_columns(project)
+        columns_order = get_column_order(filter_start, filter_end)
         
         #Filtered person information
         contract = contracts[contracts['person'] == person].iloc[0]     
         start_date = get_first_date(contract["start_date"])
         end_date = get_first_date(contract["end_date"])
+        
+        executed = get_first_date(project['executed'])
 
         sheet, activities, real_work, planned_work = fetch_data(project, person, start_date, end_date)
-        disabled_columns = get_disabled_columns(project)
-        columns_order = get_column_order(filter_start, filter_end)
         
         st.subheader("Folha de Horas") ######### Folha de Horas
 
@@ -138,17 +109,29 @@ def sheet_widget(project):
             column_config=get_columns_config(start_date, end_date, 'Integer'),
         )
 
+        modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
+        modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias']).replace(0, np.nan)).fillna(0)
+
+        
+        st.dataframe(
+            modifications.loc[['Horas Trabalhadas', 'FTE']].style.format("{:.2f}").map(format_zeros),
+            use_container_width=True,
+            column_order=columns_order,
+            column_config=get_columns_config(start_date, end_date, 'Integer')
+        )
         modifications.loc['Salário'] = None
         modifications.loc['SS'] = None
+
         
         st.subheader("Folha Salarial") ########
-
-        with st.expander("Tabela Salarial"):
+        
+        if st.toggle("Tabela Vertical"):
+            
             salary_df = st.data_editor(
                 get_salary_table(sheet.loc[["Salário", "SS"]]),
-                key=f"{person}_salary_table_{st.session_state.key}",
+                key=get_dataframe_key("salary_vertical_table", person),
                 column_config={
-                    "Data":st.column_config.DateColumn("Data", format="MMM/YY", min_value=start_date, max_value=end_date, required=True),
+                    "Data":st.column_config.DateColumn("Data", format="MMM/YY", min_value= start_date if not executed else executed, max_value=end_date, required=True),
                     "Salário":st.column_config.NumberColumn("Salário", format="%.2f €", required=True),
                     "SS":st.column_config.NumberColumn("SS", format="%.2f", default=23.75,  required=True)
                 },
@@ -156,31 +139,23 @@ def sheet_widget(project):
                 use_container_width=True,
                 num_rows='dynamic'
             )
+            
+            salary_df = salary_df.sort_values(by="Data")
+            for row in salary_df.itertuples(index=False):
+                date = get_first_date(row.Data)
+                modifications.loc[["Salário", "SS"], date_range(date, end_date)] = {'Salário':row.Salário, 'SS':row.SS}
 
-            if st.button("Aplicar Alterações", use_container_width=True):
-                salary_df = salary_df.sort_values(by="Data")
-                for row in salary_df.itertuples(index=False):
-                    date = np.datetime64(get_first_date(row.Data))
-                    contract_end_date = np.datetime64(contract_end_date)
+        else:
 
-                    st.session_state.sheets.loc[(st.session_state.sheets['person'] == person) & 
-                            (st.session_state.sheets['date'] >= date) & 
-                            (st.session_state.sheets['date'] <= contract_end_date), 
-                            ["Salário", "SS"]] = [row.Salário, row.SS]
-                
-                st.rerun()
-
-        modifications.loc[['Salário','SS']] = st.data_editor(
-            sheet.loc[['Salário', 'SS']],
-            use_container_width=True,
-            column_order=columns_order,
-            disabled=disabled_columns,
-            key = get_dataframe_key("salario_column", person),
-            column_config=get_columns_config(start_date, end_date, 'Float'),
-        )
+            modifications.loc[['Salário','SS']] = st.data_editor(
+                sheet.loc[['Salário', 'SS']],
+                use_container_width=True,
+                column_order=columns_order,
+                disabled=disabled_columns,
+                key = get_dataframe_key("salario_column", person),
+                column_config=get_columns_config(start_date, end_date, 'Float'),
+            )
         
-        modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
-        modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias']).replace(0, np.nan)).fillna(0)
         modifications.loc['Custo Aproximado'] =  ( modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan) * modifications.loc['Salário']*14 / 11 * (1 + modifications.loc['SS'] / 100)).fillna(0)
 
         if save:  #Update Folha de Horas
@@ -200,14 +175,14 @@ def sheet_widget(project):
             st.session_state.working_days = st.session_state.working_days.query('project != @project["name"] or (date < @start_date or date > @end_date)')
             st.session_state.working_days = pd.concat([st.session_state.working_days, to_update[['project', 'date', 'day']]])
 
-        st.subheader("Sumário") #######
-
         st.dataframe(
-            modifications.loc[['Horas Trabalhadas', 'FTE', 'Custo Aproximado']].style.format("{:.2f}").map(format_zeros),
+            modifications.loc[['Custo Aproximado']].style.format("{:.2f} €").map(format_zeros),
             use_container_width=True,
             column_order=columns_order,
             column_config=get_columns_config(start_date, end_date, 'Integer')
         )
+
+        st.subheader("Horas Planeadas") ### Horas Planeadas
 
         wp_sum_container = st.container()
 
@@ -216,8 +191,6 @@ def sheet_widget(project):
         planned_work = planned_work.sort_values(by="wp")
 
         wp_sheet = pd.DataFrame(columns=sheet.columns)
-
-        st.subheader("Horas Planeadas") ### Horas Planeadas
 
         for wp in planned_work['wp'].unique():
 
@@ -246,7 +219,7 @@ def sheet_widget(project):
             df_sum,
             use_container_width=True,
             column_order=columns_order,
-            column_config=get_columns_config(start_date, end_date, 'Integer', 'wp'),
+            column_config=get_columns_config(start_date, end_date, 'Integer', 'wp', 'Tabela Resumo'),
         )
 
         st.subheader("Outros Projetos") ###### Outras Atividades Section
@@ -256,11 +229,12 @@ def sheet_widget(project):
         
         non_removable_projects = real_work.query('project in @st.session_state.projects["name"]')['project'].unique()
         removable_projects = real_work.query('project not in @st.session_state.projects["name"]')['project'].unique()
-
+        projects_suggestion = st.session_state.real_work.query('project not in @st.session_state.projects["name"]')['project'].unique()
+        
         project_list = st_tags(
             list(other_projects.query('project not in @st.session_state.projects["name"]')['project'].unique()),
-            [],
-            "Projetos não geridos",
+            suggestions=projects_suggestion,
+            label="Projetos não geridos",
             key=f"{person}_project_selector_{st.session_state.key}"
         )
 
@@ -268,9 +242,10 @@ def sheet_widget(project):
         other_projects = other_projects.pivot_table(index='project', columns='date', values='hours')
         other_projects = pd.concat([pd.DataFrame(columns=sheet.columns), other_projects])
 
-        for project in project_list:
-            if project not in other_projects.index:
-                other_projects.loc[project] = None
+
+        for project_ in project_list:
+            if project_ not in other_projects.index:
+                other_projects.loc[project_] = None
 
         other_projects = other_projects.query('index in @project_list or index in @non_removable_projects')
         
@@ -295,7 +270,6 @@ def sheet_widget(project):
             column_config=get_columns_config(start_date, end_date, 'Integer'),
         )   
 
-
         if save: #Real Work (other projects) update 
             other_projects = other_projects.reset_index(names="project")
             df = other_projects.melt(id_vars="project", var_name="date",  value_name="hours")
@@ -303,9 +277,9 @@ def sheet_widget(project):
             df['person'] = person
             
             df = df.dropna(subset="hours")
-            df = df.loc[df['project'] != 'Outras Atividades']
-            print(df)
-            st.session_state.real_work =st.session_state.real_work.query('~ (person == @person and project != @project["name"] and date >= @start_date and date <= @end_date)')
+            
+            print(df, project["name"])
+            st.session_state.real_work.query('~ (person == @person and project != @project["name"] and date >= @start_date and date <= @end_date)', inplace=True)
             st.session_state.real_work = pd.concat([st.session_state.real_work, df])
 
         if not wp_sheet.empty:

@@ -2,7 +2,6 @@ import streamlit as st
 import pickle
 import pandas as pd
 from utils import *
-from streamlit_modal import Modal
 from streamlit_option_menu import option_menu
 from streamlit_antd_components import menu, MenuItem
 
@@ -80,10 +79,17 @@ def sidebar_widget() -> str:
             
             st.button("Guardar Ficheiro", use_container_width=True, on_click=save_data)
         
-            modal = Modal("Descartar todas as alterações ", key="delete_data_modal")
-        
             if st.button("Descartar Dados", use_container_width=True):
-                modal.open()
+
+                def reset_data():
+                    create_session(reset=True)
+            
+                get_dialog(
+                    "Descartar Dados", 
+                    "Se continuar os dados da empresa serão descartados e perdidos se não tiverem sido guardada uma cópia do ficheiro", 
+                    reset_data 
+                )
+            
 
         with st.container(border=True):
             
@@ -96,5 +102,4 @@ def sidebar_widget() -> str:
                 index=1
             )   
 
-    modal_warning(modal)
     return selected_page

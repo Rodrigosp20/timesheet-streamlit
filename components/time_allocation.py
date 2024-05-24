@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from utils import get_topbar
+from utils import get_topbar, sync_dataframes
 
 @st.cache_data
 def get_ftes_gender(work, contracts, sheets):
@@ -62,7 +62,7 @@ def time_allocation_widget(project):
 
         affection = get_wp_hours(planned_work, activities, work)
         styled_df = affection.groupby(level=[1]).sum().style.map(lambda x: '' if x > 0 else 'color:#BFBFBF;')
-        styled_df.format("{:.2f}")
+        styled_df.format("{:.0f}")
         
         st.subheader("Horas p/ WP")
         st.dataframe(
@@ -81,7 +81,7 @@ def time_allocation_widget(project):
 
         for person, _ in person_wp.groupby(level='person'):
             styled_df = pd.concat([person_wp.xs(person, level='person'), person_trl.xs(person, level='person')]).style.map(lambda x: '' if x > 0 else 'color:#BFBFBF;')
-            styled_df = styled_df.format("{:.2f}")
+            styled_df = styled_df.format("{:.0f}")
 
             st.dataframe(
                 styled_df,
@@ -92,5 +92,7 @@ def time_allocation_widget(project):
                     )
                 }
             )
+        
+        sync_dataframes()
         
         

@@ -5,7 +5,6 @@ from streamlit_option_menu import option_menu
 import streamlit_antd_components as sac
 from utils import get_topbar
 from streamlit_shortcuts import add_keyboard_shortcuts
-from pretty_notification_box import notification_box
 
 st.set_page_config(
     page_title="My Streamlit App",
