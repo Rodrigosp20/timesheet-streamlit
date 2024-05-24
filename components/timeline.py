@@ -5,16 +5,33 @@ from streamlit_tags import st_tags
 import plotly.express as px
 
 
+
 def update_timeline(project, data, executed, to_adjust):
     
+    data['start_date'] = pd.to_datetime(data['start_date']).dt.date
+    data['end_date'] = pd.to_datetime(data['end_date']).dt.date
+    data['real_start_date'] = pd.to_datetime(data['real_start_date']).dt.date
+    data['real_end_date'] = pd.to_datetime(data['real_end_date']).dt.date
+    project['start_date'] = pd.to_datetime(project['start_date'])
+    project['end_date'] = pd.to_datetime(project['end_date'])
+
+    #Check ff dates are valid
     if ((data['start_date'] >= data['end_date']) | (data['real_start_date'] >= data['real_end_date'])).any():
-        return st.error("Atividades com datas inválidas")
-
-    st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed
+        return set_notification("error", "Atividades com data inválidas!")
     
+    #Check if there is any camp empty
+    if data.isnull().values.any() or (data == '').values.any():
+        return set_notification("error", "Campos em falta!")
+    
+    #Check if there are repeated activity names
     if data["activity"].nunique() != len(data["activity"]):
-        return st.error("As Ativiidades tem de ter nomes únicos!")
-
+        return set_notification("error", "As Atividades tem de ter nomes únicos!")
+    
+    if executed and (executed < project['start_date'] or executed > project['end_date']):
+        return set_notification("error", "Data de execução inválida!")
+    
+    st.session_state.projects.loc[st.session_state.projects["name"] == project["name"], 'executed'] = executed.date()
+    
     contracts = st.session_state.contracts.query('project == @project["name"]')
     if to_adjust:
         if not executed:
@@ -90,7 +107,7 @@ def update_timeline(project, data, executed, to_adjust):
     st.session_state.planned_work = st.session_state.planned_work.query('~ (project == @project["name"] and activity not in @data["activity"].unique())')
     st.session_state.activities = st.session_state.activities.query('project != @project["name"]')
     st.session_state.activities = pd.concat([st.session_state.activities, data])
-    st.rerun()
+    set_notification("success", "Cronograma atualizado com sucesso!", force_reset=True)
 
 @st.cache_data
 def get_gantt(project, timeline):
@@ -107,8 +124,8 @@ def get_gantt(project, timeline):
                 'Finish': wp['end_date'],
                 'Color': "Planeado"
             })
-
-            if project['executed'] and pd.to_datetime(project['executed']) > wp['real_start_date']:
+            
+            if project['executed'] and project['executed'] > wp['real_start_date']:
                 gantt_data.append({
                     'Task': act.wp,
                     'Start': wp['real_start_date'],
@@ -132,8 +149,8 @@ def get_gantt(project, timeline):
             'Finish': act.end_date,
             'Color': "Planeado"
         })
-    
-        if project['executed'] and pd.to_datetime(project['executed']) > act.real_start_date:
+
+        if project['executed'] and project['executed'] > act.real_start_date:
             gantt_data.append({
                 'Task': act.activity,
                 'Start': act.real_start_date,
@@ -154,9 +171,16 @@ def get_gantt(project, timeline):
 def timeline_widget(project):
     timeline = st.session_state.activities.query("project == @project['name']")
     timeline = timeline.sort_values(by=['wp', 'activity', "start_date"])
-
+    
     gantt_data = get_gantt(project, timeline)
-    st.subheader("Timeline")
+
+    project['start_date'] = pd.to_datetime(project['start_date'])
+    project['end_date'] = pd.to_datetime(project['end_date'])
+
+
+    save, undo = get_topbar(project['name'])
+
+    st.subheader("Cronograma")
     if len(gantt_data) > 0:
         gantt_df = pd.DataFrame(gantt_data)
 
@@ -169,21 +193,32 @@ def timeline_widget(project):
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.write('<p style="text-align: center;">Sem Dados Disponíveis</p>', unsafe_allow_html=True)
+
+    
+    executed_date = pd.to_datetime(st.date_input("Data de execução do projeto [bloqueada]", value=project['executed'], min_value=project['start_date'], max_value=project['end_date'], format="DD/MM/YYYY"))
     
     st.subheader("WPs do Projeto")
-    wps = st_tags(
-        label='',
-        text='Inserir',
-        value=list(timeline['wp'].unique()),
-        suggestions=list(timeline['wp'].unique()),
-        key=f"wps_{st.session_state.key}"
+    wps = list(timeline['wp'].unique())
+    wps = st.data_editor(
+        wps if wps else [''],
+        column_config={
+            "value":st.column_config.TextColumn("Workpackage", required=True)
+        },
+        num_rows="dynamic",
+        hide_index=True,
+        key=f"wps_list_{st.session_state.key}"
     )
 
     activities = timeline.query('wp in @wps')
     activities = activities.set_index('activity')
     
     to_update = pd.DataFrame(columns=activities.columns)
-    st.subheader("Atividades do Projeto")
+
+    col1 , col2 = st.columns([0.35,0.65])
+
+    col1.subheader("Atividades do Projeto")    
+    to_adjust  = col2.toggle("Ajuste Automático das Horas Planeadas")
+
     for wp in wps:
 
         with st.expander(wp, expanded=True):                    
@@ -242,15 +277,14 @@ def timeline_widget(project):
 
             wp_acts[['wp', 'project']] = [wp, project['name']]
             to_update = pd.concat([to_update, wp_acts])
-            
-    col1 , col2 = st.columns(2)
-    executed_date = col1.date_input("Execução", value=project['executed'], min_value=project['start_date'], max_value=project['end_date'], format="DD/MM/YYYY")
-    to_adjust  = col2.toggle("Ajuste Automático das Horas Planeadas")
-    
-    col1, col2 = st.columns(2)
 
-    if col1.button("Guardar Alterações", key="save_timeline", use_container_width=True):                  
+  
+
+
+
+    if save:        
+        # NONE EMPTY CELLS; Nomes unicos de tarefas         
         update_timeline(project, to_update.reset_index(names="activity"), executed_date, to_adjust)
     
-    if col2.button("Descartar Alterações", key="discard_timeline", on_click=reset_key, use_container_width=True):
-        st.rerun()
+    if undo:
+        reset_key()

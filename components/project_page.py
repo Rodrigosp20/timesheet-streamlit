@@ -24,25 +24,7 @@ def update_project_dates(project, start, end):
         business_days.append(len(pd.date_range(start=month_start, end=month_start + pd.offsets.MonthEnd(), freq=pd.offsets.BDay())))
     
     st.session_state.working_days = pd.concat([st.session_state.working_days, pd.DataFrame({"project": project["name"], "day":business_days, "date":project_range})])
-    st.session_state.working_days.drop_duplicates(subset=["project", "date"])
-    
-def save_excel(file, name):
-    b64 = base64.b64encode(file).decode()
-
-    components.html(
-        f"""
-            <html>
-                <head>
-                <title>Start Auto Download file</title>
-                <a id="fileDownload" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{name}">
-                <script>
-                    document.getElementById('fileDownload').click()
-                </script>
-                </head>
-            </html>
-        """,
-        height=0,
-    )
+    st.session_state.working_days = st.session_state.working_days.drop_duplicates(subset=["project", "date"])
 
 def get_salary_info(person, start, end):
 
@@ -254,41 +236,31 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
     return wb
 
 def project_widget(project):
-    
-    st.title(project['name'])
+
+    save, undo = get_topbar(project['name'])
 
     with st.container(border=True):
             
         start_date = st.date_input("Data de Inicio", key=f"project_date_initial_{st.session_state.key}", value=project['start_date'], format="DD/MM/YYYY", max_value=project['start_date'])
         end_date = st.date_input("Data de Termino", key=f"project_date_final_{st.session_state.key}", value=project['end_date'], format="DD/MM/YYYY", min_value=project['end_date'])
 
-        _,col2 = st.columns([0.55,0.45])
-        col1, col2, col3 = col2.columns(3)
-
-        if col1.button("Guardar Alterações", key="save_project_dates", disabled=invalid(start_date, end_date)):
+    
+        if save:
             update_project_dates(project, start_date, end_date)
 
-        if col2.button("Descartar Alterações", key="discard_project_dates", on_click=reset_key):
+        if undo:
+            reset_key()
             st.rerun()
         
         modal = Modal("Eliminar Projeto ", key="delete_project_modal")
-        if col3.button("Eliminar Projeto", key="delete_project"):
-            modal.open()
         
-        if modal.is_open():
-            with modal.container():
-                st.write('<p style="text-align: center; margin-bottom:40px;">Se continuar o projeto será eliminado e não será possível recuperá-lo, continuar mesmo assim ?</p>', unsafe_allow_html=True)
+        if st.button("Eliminar Projeto", key="delete_project",use_container_width=True):
+            def action():
+                delete_project(project)
+                set_notification("success", "Projeto eliminado")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Eliminar", use_container_width=True):
-                        delete_project(project)
-                        modal.close()
-                with col2:
-                    if st.button("Cancelar", use_container_width=True):
-                        modal.close()
-            
-        
+            get_dialog("Eliminar Projeto", "Se continuar o projeto será eliminado e não será possível recuperá-lo, continuar mesmo assim ?", action)
+
 
     with st.expander("Gerar Folhas de Afetação"):
         start_date, end_date = st.slider(
@@ -296,7 +268,7 @@ def project_widget(project):
             min_value= project["start_date"],
             max_value= project["end_date"],
             value= (project["start_date"], project["end_date"]),
-            format="MM/YYYY"
+            format="MMMM/YYYY"
         )
         
         if st.button("Gerar Excel", use_container_width=True):
@@ -315,7 +287,7 @@ def project_widget(project):
             min_value= project["start_date"],
             max_value= project["end_date"],
             value= (project["start_date"], project["end_date"]),
-            format="MM/YYYY",
+            format="MMMM/YYYY",
             key="slider_pay"
         )
 

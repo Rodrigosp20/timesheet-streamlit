@@ -1,6 +1,11 @@
-from components import project_page, sidebar, home, timeline, team, sheet_page, time_allocation, cost_allocation
+from components import project_page, sidebar, home, timeline, team, sheet_page, time_allocation, cost_allocation, workers
 import streamlit as st
-from utils import create_session
+from utils import check_notification, create_session, fade_notification, reset_key
+from streamlit_option_menu import option_menu
+import streamlit_antd_components as sac
+from utils import get_topbar
+from streamlit_shortcuts import add_keyboard_shortcuts
+from pretty_notification_box import notification_box
 
 st.set_page_config(
     page_title="My Streamlit App",
@@ -10,42 +15,78 @@ st.set_page_config(
 )
 
 def main():
-    
+    st.markdown("""
+    <style>
+        div[data-testid='column'] h2 {
+            text-align:center;
+        }  
+    </style>
+    """, unsafe_allow_html=True)
+        
     create_session()
+
+    check_notification()
     
-    project = sidebar.sidebar_widget()
-    
-    if not project:
-        return home.home_widget()
-    
-    tab = st.radio('', ['Projeto', 'Cronograma', 'Equipa', 'Pessoal', 'Imputação Horas', 'Custos'], index=0, horizontal=True)
-    project = st.session_state.projects.query('name == @project').iloc[0]
-    match tab:
+    page = sidebar.sidebar_widget()
 
-        case 'Projeto':
+    match page:
 
-            project_page.project_widget(project)
+        case 'Adicionar Projeto':
+            home.home_widget()
 
-        case 'Cronograma':            
-        
-            timeline.timeline_widget(project)
-    
-        case 'Equipa':
-    
-            team.team_widget(project)
+        case 'Funcionários':
+            workers.workers_widget()
 
-        case 'Pessoal':
-        
-            sheet_page.sheet_widget(project)
+        case _:       
+            project = page
 
-        case 'Imputação Horas':
-        
-            time_allocation.time_allocation_widget(project)
-        
-        case 'Custos':
+            tab = option_menu(None,
+                options=['Home', 'Cronograma', 'Equipa', 'Sheet', 'Imputação', 'Custos'], 
+                orientation="horizontal", 
+                icons=['house', 'calendar2-week', 'person-vcard', 'file-spreadsheet', 'hourglass', 'piggy-bank'],
+                styles={
+                    'container':{'max-width':'100%'}
+                },
+                key="project_page_selector",
+            )
 
-            cost_allocation.cost_allocation_widget(project)
+            project = st.session_state.projects.query('name == @project').iloc[0]
             
+            match tab:
+                
+                case 'Home':
+
+                    project_page.project_widget(project)
+
+                case 'Cronograma':            
+                
+                    timeline.timeline_widget(project)
+            
+                case 'Equipa':
+            
+                    team.team_widget(project)
+
+                case 'Sheet':
+                
+                    sheet_page.sheet_widget(project)
+
+                case 'Imputação':
+                
+                    time_allocation.time_allocation_widget(project)
+                
+                case 'Custos':
+
+                    cost_allocation.cost_allocation_widget(project)     
+    
+      
+    add_keyboard_shortcuts({
+        'Ctrl+Shift+S': '💾 Guardar',
+        'Ctrl+Shift+s': '💾 Guardar',
+        'Ctrl+z': '❌ Desfazer',
+        'Ctrl+Z': '❌ Desfazer',
+    })
+    
+    fade_notification()
        
     
 if __name__ == "__main__":

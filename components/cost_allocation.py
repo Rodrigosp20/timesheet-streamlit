@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from utils import *
 
 @st.cache_data
 def get_wp_costs(activities, work, planned_work, sheet):
@@ -31,6 +32,8 @@ def cost_allocation_widget(project):
 
     working_days = st.session_state.working_days.query('project == @project["name"]')
     sheet = sheet.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
+    
+    get_topbar(project['name'])
     
     if not planned_work.empty:
         

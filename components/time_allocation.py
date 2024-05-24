@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from utils import get_topbar
 
 @st.cache_data
 def get_ftes_gender(work, contracts, sheets):
@@ -39,6 +40,7 @@ def time_allocation_widget(project):
     sheets = st.session_state.sheets[["person", "date", "Jornada Diária", "Férias"]]
     sheets = sheets.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
     
+    get_topbar(project['name'], buttons=False)
 
     if not work.empty:
         
