@@ -122,7 +122,7 @@ def get_gantt(project, timeline):
                 'Finish': wp['end_date'],
                 'Color': "Planeado"
             })
-            
+    
             if project['executed'] and project['executed'] > wp['real_start_date']:
                 gantt_data.append({
                     'Task': act.wp,
@@ -169,6 +169,12 @@ def get_gantt(project, timeline):
 def timeline_widget(project):
     timeline = st.session_state.activities.query("project == @project['name']")
     timeline = timeline.sort_values(by=['wp', 'activity', "start_date"])
+
+    #SAFE DATES
+    timeline['start_date'] = pd.to_datetime(timeline['start_date']).dt.date
+    timeline['end_date'] = pd.to_datetime(timeline['end_date']).dt.date
+    timeline['real_start_date'] = pd.to_datetime(timeline['real_start_date']).dt.date
+    timeline['real_end_date'] = pd.to_datetime(timeline['real_end_date']).dt.date
     
     gantt_data = get_gantt(project, timeline)
 

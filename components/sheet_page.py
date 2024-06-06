@@ -293,7 +293,7 @@ def sheet_widget(project):
                 wp_sheet.replace(np.nan, 0, inplace=True)
 
                 for act in st.session_state.activities.query('project == @project["name"]').itertuples(index=False):
-                    wp_sheet = wp_sheet.query('not (activity == @act.activity and (date < @act.start_date or date > @act.end_date))')
+                    wp_sheet = wp_sheet.query('not (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
                     
                 st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @start_date or date > @end_date)')
                 st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
