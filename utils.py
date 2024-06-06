@@ -1,6 +1,14 @@
 import datetime, calendar, pickle, base64, pandas as pd, streamlit as st
+import time
+import threading
+from typing import Literal
 from openpyxl import load_workbook
 import streamlit.components.v1 as components
+from streamlit_shortcuts import add_keyboard_shortcuts
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+
+notification_container = None
+DATA_VERSION = 2
 
 # Data Schema 
 projects_schema = {
@@ -10,6 +18,11 @@ projects_schema = {
     "executed": "datetime64[ns]"
 }
 
+persons_schema = {
+    "name" : "string",
+    "gender": "string"
+}
+ 
 activities_schema = {
     "project": "string",
     "wp": "string",
@@ -66,7 +79,13 @@ def create_session(reset=False):
     
     if 'key' not in st.session_state:
         st.session_state.key = 0
+
+    if 'to_reset' not in st.session_state:
+        st.session_state.to_reset = False
     
+    if 'notification' not in st.session_state:
+        st.session_state.notification = None
+        
     if 'file_id' not in st.session_state or reset:
         if reset:
             st.session_state.file_id = (st.session_state.file_id + 1) % 2 
@@ -78,6 +97,7 @@ def create_session(reset=False):
 
     if 'activities' not in st.session_state or reset:
         st.session_state.activities = pd.DataFrame(columns=activities_schema.keys()).astype(activities_schema)
+        st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
         st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
         st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
         st.session_state.sheets = pd.DataFrame(columns=sheets_schema.keys()).astype(sheets_schema)
@@ -95,7 +115,9 @@ def save_data():
         'sheets': st.session_state.sheets,
         'planned_work' : st.session_state.planned_work,
         'real_work' : st.session_state.real_work,
-        'working_days': st.session_state.working_days
+        'working_days': st.session_state.working_days,
+        'persons': st.session_state.persons,
+        'version': DATA_VERSION
     })
 
     b64 = base64.b64encode(object_to_download).decode()
@@ -109,6 +131,24 @@ def save_data():
                 <a id="fileDownload" href="data:application/octet-stream;base64,{b64}" download="{download_filename}">
                 <script>
                     document.getElementById('fileDownload').click();
+                </script>
+                </head>
+            </html>
+        """,
+        height=0,
+    )
+
+def save_excel(file, name):
+    b64 = base64.b64encode(file).decode()
+
+    components.html(
+        f"""
+            <html>
+                <head>
+                <title>Start Auto Download file</title>
+                <a id="fileDownload" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{name}">
+                <script>
+                    document.getElementById('fileDownload').click()
                 </script>
                 </head>
             </html>
@@ -134,14 +174,17 @@ def date_range(start, end):
 
 def reset_key():
     st.session_state.key = (st.session_state.key + 1) % 2
+    st.rerun()
 
 def get_first_date(date):
+    if not date:
+        return None
+    
     return datetime.date(date.year, date.month, 1)
 
 def get_last_date(date):
     _, last_day = calendar.monthrange(date.year, date.month)
     return datetime.date(date.year, date.month, last_day)
-
 
 def extract_cell_colors_and_dates(file):
     # Load the Excel workbook
@@ -187,3 +230,121 @@ def min_max_dates(row, value1, value2):
     if len(dates) == 0:
         return None, None
     return get_first_date(min(dates)), get_last_date(max(dates))
+
+@st.experimental_dialog("Pretende Continuar?", width="large")
+def get_dialog(title:str, paragraph:str, action):
+    st.title(title)
+    st.write(paragraph)
+
+    c1, c2 = st.columns(2)
+    if c1.button("Continuar", use_container_width=True):
+        action()
+        st.rerun()
+    
+    if c2.button("Cancelar", use_container_width=True):
+        st.rerun()
+
+def get_topbar(title:str, buttons=True) ->tuple[bool, bool] | None:
+    with st.container(border= True):
+     
+        c1, c2 = st.columns([0.7,0.3] if buttons else [0.9999,0.0001])
+
+        c1.header(title)
+        
+        if buttons:
+            with c2:
+                save = st.button(":floppy_disk: Guardar", use_container_width=True)
+                undo = st.button(":x: Desfazer", use_container_width=True)
+
+            return save, undo
+
+def set_notification(type: Literal['warning', 'error', 'success'], message:str, force_reset=False):
+
+    st.session_state.notification= {"message":message, "type":type}
+
+    if force_reset:
+        return reset_key()
+    
+    global notification_container
+    
+    match type:
+        case 'warning':
+            notification_container.warning(message, icon="⚠️")
+        case 'error':
+            notification_container.error(message, icon="🚨")
+        case'success':
+            notification_container.success(message, icon="✅") 
+
+    
+def check_notification():
+    global notification_container
+    
+    st.markdown("""
+        <style>
+            div.stAlert > div > div > div > div{
+                display: flex;
+                flex-direction: row;
+                justify-content: center;
+            }
+            
+            div.stAlert {
+                position: fixed;
+                top: 70px;
+                left: 50%;
+                z-index: 50;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    notification_container =  st.empty()
+
+    if notification := st.session_state.notification:
+
+        match notification['type']:
+            case 'warning':
+                notification_container.warning(notification['message'], icon="⚠️")
+            case 'error':
+                notification_container.error(notification['message'], icon="🚨")
+            case'success':
+                notification_container.success(notification['message'], icon="✅") 
+
+def fade_notification():
+    global notification_container
+
+    if st.session_state.notification:
+        time.sleep(2)
+        notification_container.empty()
+
+        notification_container = None
+        st.session_state.notification = None 
+
+def sync_dataframes():
+    if 'run' not in st.session_state:
+        st.session_state.run = 0
+    else:
+        st.session_state.run = (st.session_state.run + 1) % 2
+
+    js =f"""
+        <script>
+        hash = "{st.session_state.run}";
+        tables = window.parent.document.querySelectorAll('.dvn-scroller');
+
+        isSyncingScroll = false;
+
+        tables.forEach((table, index) => {{
+            table.addEventListener('scroll', function() {{
+                if (!isSyncingScroll) {{
+                    isSyncingScroll = true;
+                    tables.forEach((otherTable, otherIndex) => {{
+                        if (index !== otherIndex) {{
+                            otherTable.scrollLeft = table.scrollLeft;
+                        }}
+                    }});
+                    isSyncingScroll = false;
+                }}
+            }});
+        }});
+        </script>
+    """
+    
+    components.html(js, height=0)

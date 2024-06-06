@@ -2,14 +2,30 @@ import streamlit as st
 import pickle
 import pandas as pd
 from utils import *
-from streamlit_modal import Modal
+from streamlit_option_menu import option_menu
+from streamlit_antd_components import menu, MenuItem
+
+
+def check_file_version(file):
+    data = pickle.load(file)
+
+    version = data.get('version', 1)
+    if version == 1:
+
+        data['persons'] = data['contracts'].drop_duplicates(subset="person")[['person', 'gender']]
+        data['persons'].rename({'person':'name'}, axis='columns', inplace=True)
+        data['version'] = 2
+    
+    return data
 
 def read_file():
     """ Load file into cache memory """
     
     if file := st.session_state[f"file_{st.session_state.file_id}"]:
-        data = pickle.load(file)
+        data = check_file_version(file)
+
         st.session_state.activities= data['activities']
+        st.session_state.persons= data['persons']
         st.session_state.contracts = data['contracts']
         st.session_state.projects = data['projects']
         st.session_state.sheets = data['sheets']
@@ -19,6 +35,7 @@ def read_file():
         st.session_state.company_name = file.name.split('.pkl')[0]
     else:
         st.session_state.activities = pd.DataFrame(columns=activities_schema.keys()).astype(activities_schema)
+        st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
         st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
         st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
         st.session_state.sheets = pd.DataFrame(columns=sheets_schema.keys()).astype(sheets_schema)
@@ -27,38 +44,62 @@ def read_file():
         st.session_state.working_days = pd.DataFrame(columns=working_days_schema.keys()).astype(working_days_schema)
         st.session_state.company_name = ""
 
+def get_project_items() -> list:
+    projects = [MenuItem(project_name, icon="diamond") for project_name in st.session_state.projects['name']]
+    projects.insert(0,MenuItem("Adicionar Projeto", icon="folder-plus"))
+    return projects
+
 def sidebar_widget() -> str:
+    st.markdown("""
+    <style>
+        div[data-testid="stSidebarContent"] div[data-testid="stFileUploader"] label {
+            display: none;
+        }
+                
+        div[data-testid='stVerticalBlock'] > div:nth-child(2) {
+            background-color: rgb(14, 17, 23);
+        }
+                
+                
+        div[data-testid="stSidebarContent"] div[data-testid="stFileUploader"] section {
+            border: 1px white dashed;
+        }
+                
+    </style>
+    """, unsafe_allow_html=True)
 
     with st.sidebar:
 
-        st.title("Ficheiro de Dados")
+        st.session_state.company_name = st.text_input("Nome da Empresa", st.session_state.company_name)
 
-        st.file_uploader("Carrega o Ficheiro", type=".pkl", label_visibility='hidden', key=f"file_{st.session_state.file_id}", on_change=read_file)
+        with st.container(border= True):
+            st.header("Dados da empresa")
+
+            st.file_uploader("Carrega o Ficheiro", type=".pkl", label_visibility='hidden', key=f"file_{st.session_state.file_id}", on_change=read_file)
+            
+            st.button("Guardar Ficheiro", use_container_width=True, on_click=save_data)
         
-        st.button("Guardar Progresso", use_container_width=True, on_click=save_data)
-       
-        modal = Modal("Descartar todas as alterações ", key="delete_data_modal")
-        
-        if st.button("Descartar Todas Alterações", use_container_width=True):
-            modal.open()
+            if st.button("Descartar Dados", use_container_width=True):
 
-        if modal.is_open():
-            with modal.container():
-                st.write('<p style="text-align: center; margin-bottom:40px;">Irá perder trabalho não guardado, continuar mesmo assim ?</p>', unsafe_allow_html=True)                
+                def reset_data():
+                    create_session(reset=True)
+            
+                get_dialog(
+                    "Descartar Dados", 
+                    "Se continuar os dados da empresa serão descartados e perdidos se não tiverem sido guardada uma cópia do ficheiro", 
+                    reset_data 
+                )
+            
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Eliminar", use_container_width=True):
-                        create_session(reset=True)
-                        modal.close()
-                        st.rerun()
+        with st.container(border=True):
+            
+            selected_page = menu(
+                items=[
+                    MenuItem('Projetos', icon='kanban', children=get_project_items()),
+                    MenuItem('Funcionários', icon='people-fill'),
+                ], 
+                open_all=True,
+                index=1
+            )   
 
-                with col2:
-                    if st.button("Cancelar", use_container_width=True):
-                        modal.close()
-        
-        st.divider()
-
-        st.session_state.company_name = st.text_input("Empresa", st.session_state.company_name)
-
-        return st.selectbox('Projeto', options = [""] + st.session_state.projects['name'].to_list(), placeholder="Escolhe um projeto", on_change=reset_key)
+    return selected_page

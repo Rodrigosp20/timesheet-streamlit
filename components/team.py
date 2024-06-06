@@ -9,6 +9,22 @@ def update_contracts(project, data):
     data['start_date'] = pd.to_datetime(data['start_date']).dt.date
     data['end_date'] = pd.to_datetime(data['end_date']).dt.date
     
+    #check contract dates
+    if (data['start_date'] >= data['end_date']).any():
+        return set_notification("error", "Contratos com datas inválidas!")
+    
+    #check if dataframe is complete
+    if data.isnull().values.any() or (data == '').values.any():
+        return set_notification("error", "Campos em falta!")
+    
+    if data['person'].nunique() != len(data):
+       return set_notification("error", "Funcionários não devem aparecer repetidos") 
+    
+    data = pd.merge(data, st.session_state.persons, 
+                    left_on='person', right_on='name', how='left', suffixes=('', ''))
+
+    data.drop(columns=['name'], inplace=True)
+
     for contract in data.itertuples():
 
         contract_start_date = get_first_date(contract.start_date)
@@ -38,21 +54,24 @@ def update_contracts(project, data):
 
     st.session_state.contracts = st.session_state.contracts.query('project != @project["name"]')
     st.session_state.contracts = pd.concat([st.session_state.contracts, data])
-    st.rerun()
+    
+    set_notification("success", "Equipa do projeto ataulizado com sucesso", force_reset=True)
 
 def team_widget(project):
+
+    save, undo = get_topbar(project['name'])
     
-    contracts = st.session_state.contracts
     project_contracts = st.session_state.contracts.query('project == @project["name"]')
     
+    st.subheader("Equipa do Projeto")
+    
     updated = st.data_editor(
-        project_contracts.set_index("person"),
+        project_contracts.set_index("person")[['profile','start_date','end_date']],
         key=f"persons_table_{st.session_state.key}",
-        column_order=("person", "profile", "gender","start_date","end_date"),
+        column_order=("person", "profile","start_date","end_date"),
         column_config={
-            "person": st.column_config.TextColumn("Pessoa"),
+            "person": st.column_config.SelectboxColumn("Funcionário", options=st.session_state.persons["name"]),
             "profile": st.column_config.TextColumn("Perfil"),
-            "gender": st.column_config.SelectboxColumn("Gênero", options=['M', 'F']),
             "start_date": st.column_config.DateColumn("Data de Inicio", format="DD/MM/YYYY", min_value=project["start_date"], max_value=project["end_date"], default=project["start_date"]),
             "end_date": st.column_config.DateColumn("Data de Conclusão", format="DD/MM/YYYY", min_value=project["start_date"], max_value=project["end_date"], default=project["end_date"])
         },
@@ -60,41 +79,11 @@ def team_widget(project):
         num_rows="dynamic"
     )
 
-    # members = st_tags(
-    #     label='Membros do projeto',
-    #     text='Pesquisar',
-    #     value=list(project_contracts['person']),
-    #     suggestions=list(contracts['person'].unique()),
-    #     key=f"members_{st.session_state.key}"
-    # )
-
-    # updated = project_contracts.loc[project_contracts['person'].isin(members)]
-    # updated = updated.set_index('person')
-
-    # for member in members:
-
-    #     with st.expander(member, expanded=True):
-
-    #         col1, col2 = st.columns(2)
-
-    #         updated.loc[member, 'profile'] = col1.text_input("Pefil", key=f"{member}_perfil_{st.session_state.key}", value= updated.loc[member, 'profile'] if member in updated.index else '')
-    #         updated.loc[member,'gender'] = col2.selectbox("Genero", options=["M","F"], key=f"{member}_genero_{st.session_state.key}", index=1 if not pd.isna(gender:=updated.loc[member,'gender']) and gender == 'F' else 0)
-            
-    #         col1, col2 = st.columns(2)
-    #         updated.loc[member,'start_date'] = col1.date_input("Data de Inicio",key=f"{member}_inicio_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'start_date'] if not pd.isna(updated.loc[member,'start_date']) else project['start_date'], min_value=project['start_date'])
-    #         updated.loc[member,'end_date'] = col2.date_input("Data de Termino",key=f"{member}_fim_{st.session_state.key}", format="DD/MM/YYYY", value= updated.loc[member,'end_date'] if not pd.isna(updated.loc[member,'end_date']) else project['end_date'], max_value=project['end_date'])
-
-    col1, col2 = st.columns(2)
-    if col1.button("Guardar Alterações", use_container_width=True):
+    if save:
         updated['project'] = project['name']
         updated = updated.reset_index()
         
-        if updated.eq('').any().any():
-            st.error("Fill form")
-        else:
-            update_contracts(project, updated)
-            st.rerun()
+        update_contracts(project, updated)
     
-    if col2.button("Descartar alterações", use_container_width=True):
-        st.session_state.key = (st.session_state.key + 1) % 2
-        st.rerun()
+    if undo:
+        reset_key()
