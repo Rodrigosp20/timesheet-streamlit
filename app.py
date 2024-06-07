@@ -7,8 +7,8 @@ from utils import get_topbar
 from streamlit_shortcuts import add_keyboard_shortcuts
 
 st.set_page_config(
-    page_title="My Streamlit App",
-    page_icon=":chart_with_upwards_trend:",
+    page_title="Timesheet",
+    page_icon=":newspaper:",
     layout="wide",  # 'centered' or 'wide'
     initial_sidebar_state="expanded",  # 'auto', 'expanded', 'collapsed'
 )
