@@ -83,6 +83,14 @@ def sheet_widget(project):
         reset_key()
 
     if person := st.selectbox("Selecionar Membro", options= contracts['person'].unique()):
+
+        st.markdown("""
+            <style>
+                label[data-baseweb='checkbox'] {
+                    width:fit-content;
+                }  
+            </style>
+        """, unsafe_allow_html=True)
         
         #Filter Start and End date
         filter_start, filter_end = st.slider("", min_value=get_first_date(project["start_date"]), max_value=project["end_date"], format="MMMM/YYYY", value=(project["start_date"], project["end_date"]), step=timedelta(weeks=4))

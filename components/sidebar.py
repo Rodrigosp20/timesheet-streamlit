@@ -64,6 +64,11 @@ def sidebar_widget() -> str:
         div[data-testid="stSidebarContent"] div[data-testid="stFileUploader"] section {
             border: 1px white dashed;
         }
+
+        div[data-testid="stSidebarContent"] > div[data-testid="stVerticalBlockBorderWrapper"]:last-child {
+            position: fixed;
+            bottom: 15px;    
+        }
                 
     </style>
     """, unsafe_allow_html=True)
@@ -100,6 +105,26 @@ def sidebar_widget() -> str:
                 ], 
                 open_all=True,
                 index=1
-            )   
+            )  
+
+        with st.container():
+
+            with open("assets/MOD-16.3, Timesheets.pdf", "rb") as file:
+                st.download_button(
+                    label="Instrução de Trabalho",
+                    data=file,
+                    file_name="MOD-16.3, Timesheets.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+            with open("assets/Timesheet.xlsx", "rb") as file:
+                st.download_button(
+                    label="Template Timesheet",
+                    data=file,
+                    file_name="Timesheet_Template.xlsx",
+                    mime="application/vnd.ms-excel",
+                    use_container_width=True
+                )
 
     return selected_page
