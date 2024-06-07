@@ -220,71 +220,80 @@ def timeline_widget(project):
 
     col1 , col2 = st.columns([0.35,0.65])
 
-    col1.subheader("Atividades do Projeto")    
-    to_adjust  = col2.toggle("Ajuste Automático das Horas Planeadas")
+    if '' in wps:
+        wps.remove('')
+    
+    to_adjust = False
+    
+    
+    if not wps:
+        st.write('<p style="text-align: center;">Nenhum WP Encontrado</p>', unsafe_allow_html=True)
+    
+    else:
+        col1.subheader("Atividades do Projeto")    
+        to_adjust  = col2.toggle("Ajuste Automático das Horas Planeadas")
 
-    for wp in wps:
 
-        with st.expander(wp, expanded=True):                    
-            wp_df = activities.query('wp == @wp')
+        for wp in wps:
 
-            wp_acts = st.data_editor(
-                wp_df,
-                key=f"{wp}_data_{st.session_state.key}",
-                column_order=["activity", "trl", "start_date", "end_date", "real_start_date", "real_end_date"],
-                column_config={
-                    "activity": st.column_config.TextColumn(
-                        "Atividade",
-                        required=True,
-                        default="A",
-                        width="medium",
-                    ),
-                    "trl": st.column_config.SelectboxColumn(
-                        "TRL",
-                        options=['TRL 3-4', 'TRL 5-9'],
-                        required=True
-                    ),
-                    "start_date": st.column_config.DateColumn(
-                        "Data de Inicio [Planeada]",
-                        min_value=project["start_date"],
-                        default=project["start_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "end_date": st.column_config.DateColumn(
-                        "Data de Conclusão [Planeada]",
-                        max_value=project["end_date"],
-                        default=project["end_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "real_start_date": st.column_config.DateColumn(
-                        "Data de Inicio [Real]",
-                        min_value=project["start_date"] if not project['executed'] else project['executed'],
-                        max_value=project["end_date"],
-                        default=project["start_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    ),
-                    "real_end_date": st.column_config.DateColumn(
-                        "Data de Conclusão [Real]",
-                        min_value=project["start_date"] if not project['executed'] else project['executed'],
-                        max_value=project["end_date"],
-                        default=project["end_date"],
-                        format="DD/MM/YYYY",
-                        required=True
-                    )
-                },
-                use_container_width=True,
-                num_rows='dynamic'
-            )
+            with st.expander(wp, expanded=True):                    
+                wp_df = activities.query('wp == @wp')
 
-            wp_acts[['wp', 'project']] = [wp, project['name']]
-            to_update = pd.concat([to_update, wp_acts])
+                wp_acts = st.data_editor(
+                    wp_df,
+                    key=f"{wp}_data_{st.session_state.key}",
+                    column_order=["activity", "trl", "start_date", "end_date", "real_start_date", "real_end_date"],
+                    column_config={
+                        "activity": st.column_config.TextColumn(
+                            "Atividade",
+                            required=True,
+                            default="A",
+                            width="medium",
+                        ),
+                        "trl": st.column_config.SelectboxColumn(
+                            "TRL",
+                            options=['TRL 3-4', 'TRL 5-9'],
+                            required=True
+                        ),
+                        "start_date": st.column_config.DateColumn(
+                            "Data de Inicio [Planeada]",
+                            min_value=project["start_date"],
+                            default=project["start_date"],
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "end_date": st.column_config.DateColumn(
+                            "Data de Conclusão [Planeada]",
+                            max_value=project["end_date"],
+                            default=project["end_date"],
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "real_start_date": st.column_config.DateColumn(
+                            "Data de Inicio [Real]",
+                            min_value=project["start_date"] if not project['executed'] else project['executed'],
+                            max_value=project["end_date"],
+                            default=project["start_date"],
+                            format="DD/MM/YYYY",
+                            required=True
+                        ),
+                        "real_end_date": st.column_config.DateColumn(
+                            "Data de Conclusão [Real]",
+                            min_value=project["start_date"] if not project['executed'] else project['executed'],
+                            max_value=project["end_date"],
+                            default=project["end_date"],
+                            format="DD/MM/YYYY",
+                            required=True
+                        )
+                    },
+                    use_container_width=True,
+                    num_rows='dynamic'
+                )
+
+                wp_acts[['wp', 'project']] = [wp, project['name']]
+                to_update = pd.concat([to_update, wp_acts])
 
   
-
-
 
     if save:        
         # NONE EMPTY CELLS; Nomes unicos de tarefas         
