@@ -118,7 +118,7 @@ def sheet_widget(project):
         )
 
         modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
-        modifications.loc['FTE'] = (modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis'] - modifications.loc['Férias']).replace(0, np.nan)).fillna(0)
+        modifications.loc['FTE'] = (modifications.loc['Horas Reais'].fillna(0) / (modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Férias'].fillna(0)).replace(0, np.nan)).fillna(0)
 
         
         st.dataframe(

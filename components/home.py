@@ -87,7 +87,8 @@ def read_timesheet(file):
         team = pd.concat([team, pd.read_excel(file, sheet_name="Equipa de projeto", usecols=[2,7,8,9,10], header=7, names=["profile", "person", "gender", "start_date", "end_date"]).dropna(subset="person")])
     except:
         raise Exception("Erro a ler a equipa de projeto")
-
+    
+   
     try:
         timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["activity","trl"])
     except:
@@ -107,7 +108,7 @@ def read_timesheet(file):
     except:
         raise Exception("Datas inválidas no cronograma")
 
-    team.loc[pd.isna(team['end_date']), "end_date"] = end_date
+    team.loc[pd.isna(team['end_date']), "end_date"] = end_date  
 
     activities = pd.DataFrame()
 
@@ -145,11 +146,15 @@ def read_timesheet(file):
         activities["trl"] = "TRL " + activities['trl']
     except:
         pass
-        
+
     activities = activities[['activity', 'trl','wp','start_date','end_date','real_start_date','real_end_date']]
-    
+
+    #Check if ther aren't any duplicated activities names
+    assert not activities['activity'].duplicated().any() , "Existem atividades com nomes repetidos no ficheiro"
+       
     cols_to_convert = ['start_date','end_date','real_start_date','real_end_date']
     activities[cols_to_convert] = activities[cols_to_convert].apply(pd.to_datetime)
+
 
     sheets = pd.DataFrame()
     planned_works = pd.DataFrame()
@@ -169,6 +174,7 @@ def read_timesheet(file):
         df = df.set_index("date")
         
         contract_range = pd.date_range(start= get_first_date(contract.start_date), end= contract.end_date, freq="MS")
+        
         try:
             sheet = df.loc[['Jornada diária', 'N.º de dias \núteis','Faltas (horas/mês)','Férias (horas/mês)','Salário atualizado (€)','SS'], contract_range].fillna(0)
         except:
@@ -183,7 +189,12 @@ def read_timesheet(file):
             "Férias (horas/mês)":"Férias",
             "Salário atualizado (€)":"Salário"
         })
-
+        
+        try:
+            sheet[['Jornada Diária', 'day', 'Faltas', 'Férias', 'Salário']] = sheet[['Jornada Diária', 'day', 'Faltas', 'Férias', 'Salário']].astype('float64')
+        except:
+            raise Exception(f"Erro a ler a folha {sheet_name} - Não foi possível converter a folha com Números Inválidos")
+        
         sheet["SS"] = sheet["SS"] * 100
         sheet["person"] = contract.person
         sheet["date"] = pd.to_datetime(sheet['date'])
@@ -328,6 +339,7 @@ def home_widget():
             use_container_width=True,
             hide_index=True
         )
+
         
     if st.button("Adicionar Projeto", disabled= invalid(project_name, file), use_container_width=True):
         add_project(project_name, start_date, end_date, activities, team, sheets, planned_work, real_work, working_days)
