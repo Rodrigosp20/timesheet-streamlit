@@ -1,6 +1,6 @@
 from components import project_page, sidebar, home, timeline, team, sheet_page, time_allocation, cost_allocation, workers
 import streamlit as st
-from utils import check_notification, create_session, fade_notification, reset_key
+from utils import check_notification, create_session, fade_notification, reset_key, warning_before_leave
 from streamlit_option_menu import option_menu
 import streamlit_antd_components as sac
 from utils import get_topbar
@@ -86,6 +86,8 @@ def main():
     })
     
     fade_notification()
+    
+    warning_before_leave()
        
     
 if __name__ == "__main__":

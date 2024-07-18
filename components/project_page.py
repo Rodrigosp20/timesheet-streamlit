@@ -13,6 +13,7 @@ def delete_project(project):
     st.session_state.working_days = st.session_state.contracts.query('project != @project["name"]')
     st.session_state.real_work = st.session_state.real_work.query('project != @project["name"]')
     st.session_state.planned_work = st.session_state.planned_work.query('project != @project["name"]')
+    st.session_state.unsaved = True
 
 def update_project_dates(project, start, end):
     st.session_state.projects.loc[st.session_state.projects['name'] == project["name"], ["start_date", "end_date"]] = [start, end]
@@ -290,12 +291,12 @@ def project_widget(project):
 
         if template := st.file_uploader("Template", type=".xlsx", accept_multiple_files=False):
             df_team = pd.read_excel(template ,sheet_name="Referências", usecols="H", header=3, names=["tecnico"]).dropna()
-            project_persons = st.session_state.contracts.query('project == @project["name"]')["person"].unique()
+            project_persons = st.session_state.contracts.query('project == @project["name"]')["person"]
 
-            try:
-                df_team['equipa'] = project_persons 
-            except:
-                pass
+            
+            df_team = pd.concat([df_team, project_persons],axis=1)
+            df_team.dropna(subset='tecnico', inplace=True)
+            df_team.columns = ['tecnico','equipa']
 
             df_team = st.data_editor(
                 df_team,
@@ -310,13 +311,18 @@ def project_widget(project):
                 hide_index=True
             )
 
-            df_trl = pd.read_excel(template, sheet_name="Referências", usecols="E", header=3, names=["investimento"]).dropna()
-            df_trl['wp'] = None
-            df_trl['trl'] = None
+            df_trl = pd.read_excel(template, sheet_name="Referências", usecols="E", header=3, names=["code"]).dropna()
+            aux = st.session_state.inv_order_num.query('project == @project["name"]')
+            df_trl = pd.merge(left=df_trl, right=aux[['code','wp','trl']], how='left', left_on='code', right_on='code')
+            # df_trl['wp'] = None
+            # df_trl['trl'] = None
 
             df_trl = st.data_editor(
                 df_trl,
                 column_config={
+                    "code":st.column_config.TextColumn(
+                        "Investimento"
+                    ),
                     "wp":st.column_config.SelectboxColumn(
                         "wp",
                         options=st.session_state.activities.query('project == @project["name"]')['wp'].unique()
@@ -324,9 +330,9 @@ def project_widget(project):
                     "trl":st.column_config.SelectboxColumn(
                         "trl",
                         options=st.session_state.activities.query('project == @project["name"]')['trl'].unique()
-                    ),
+                    )
                 },
-                disabled=['investimento'],
+                disabled=['code'],
                 hide_index=True,
                 use_container_width=True
             )    
@@ -339,10 +345,16 @@ def project_widget(project):
 
             order_by = st.multiselect('Ordernar Por', options.keys())         
             order_by = [options[option] for option in order_by]
-            
-        if st.button("Gerar Excel", key="pay_excel", use_container_width=True , disabled=False if template else True):
-            wb = generate_pay_sheets(project, template, order_by, start_date, end_date, df_team, df_trl)
 
+        if st.button("Gerar Excel", key="pay_excel", use_container_width=True , disabled=False if template else True):
+            df_trl['project'] = project["name"]
+            
+            st.session_state.inv_order_num.drop(st.session_state.inv_order_num.query('project == @project["name"]').index, inplace=True)
+            st.session_state.inv_order_num = pd.concat([st.session_state.inv_order_num, df_trl]).reset_index(drop=True)
+
+            st.session_state.unsaved = True
+
+            wb = generate_pay_sheets(project, template, order_by, start_date, end_date, df_team, df_trl)
             virtual_workbook = BytesIO()
             wb.save(virtual_workbook)
             virtual_workbook.seek(0)

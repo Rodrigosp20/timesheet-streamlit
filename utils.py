@@ -8,7 +8,7 @@ from streamlit_shortcuts import add_keyboard_shortcuts
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 notification_container = None
-DATA_VERSION = 2
+DATA_VERSION = 3
 
 # Data Schema 
 projects_schema = {
@@ -74,6 +74,13 @@ planned_work_schema = {
     "hours" : "int64"
 }
 
+inv_order_num_schema = {
+    'project' : 'string',
+    "wp": "string",
+    "trl": "string",
+    "code" : "string"
+}
+
 def create_session(reset=False):
     """ Initialize streamlit session variables """
     
@@ -85,6 +92,9 @@ def create_session(reset=False):
     
     if 'notification' not in st.session_state:
         st.session_state.notification = None
+    
+    if 'unsaved' not in st.session_state or reset:
+        st.session_state.unsaved = False
         
     if 'file_id' not in st.session_state or reset:
         if reset:
@@ -104,6 +114,7 @@ def create_session(reset=False):
         st.session_state.planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
         st.session_state.real_work = pd.DataFrame(columns=real_work_schema.keys()).astype(real_work_schema)
         st.session_state.working_days = pd.DataFrame(columns=working_days_schema.keys()).astype(working_days_schema)
+        st.session_state.inv_order_num = pd.DataFrame(columns=inv_order_num_schema.keys()).astype(inv_order_num_schema)
 
 def save_data():
     """ Download all data """
@@ -117,6 +128,7 @@ def save_data():
         'real_work' : st.session_state.real_work,
         'working_days': st.session_state.working_days,
         'persons': st.session_state.persons,
+        'inv_order_num': st.session_state.inv_order_num,
         'version': DATA_VERSION
     })
 
@@ -137,6 +149,8 @@ def save_data():
         """,
         height=0,
     )
+
+    st.session_state.unsaved = False
 
 def save_excel(file, name):
     b64 = base64.b64encode(file).decode()
@@ -253,7 +267,8 @@ def get_topbar(title:str, buttons=True) ->tuple[bool, bool] | None:
         
         if buttons:
             with c2:
-                save = st.button(":floppy_disk: Guardar", use_container_width=True)
+                if save := st.button(":floppy_disk: Guardar", use_container_width=True):
+                    st.session_state.unsaved = True
                 undo = st.button(":x: Desfazer", use_container_width=True)
 
             return save, undo
@@ -317,6 +332,17 @@ def fade_notification():
 
         notification_container = None
         st.session_state.notification = None 
+
+def warning_before_leave():
+    if st.session_state.unsaved:
+        js = """
+        <script>
+        window.onbeforeunload = function() {
+            return "Do you really want to leave this page and lose your unsaved changes?";
+        };
+        </script>
+        """
+        components.html(js, height=0)
 
 def sync_dataframes():
     if 'run' not in st.session_state:
