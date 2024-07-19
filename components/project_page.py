@@ -218,7 +218,7 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
     df_team = df_team[df_team['res'] > 0]
 
     df_team = df_team.merge(df_trl, on=["wp", "trl"], how="left")
-    df_team = df_team[~ pd.isna(df_team['investimento'])]
+    df_team = df_team[~ pd.isna(df_team['code'])]
     
     if len(order_by) > 0:
         df_team = df_team.sort_values(by=order_by)
@@ -228,7 +228,7 @@ def generate_pay_sheets(project, file, order_by, start, end, df_team, df_trl):
 
     for i, val in enumerate(df_team.itertuples(index=False), start=4):
 
-        ws[f'C{i}'] = val.investimento
+        ws[f'C{i}'] = val.code
         ws[f'D{i}'] = val.tecnico
         ws[f'E{i}'] = '{}/{}'.format(val.date.month, val.date.year)
         ws[f'G{i}'] = val.res
