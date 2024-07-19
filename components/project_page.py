@@ -339,7 +339,7 @@ def project_widget(project):
 
             options = {
                 "Pessoa": "tecnico",
-                "Nº Ordem": "investimento",
+                "Nº Ordem": "code",
                 "Data": "date"
             }
 
