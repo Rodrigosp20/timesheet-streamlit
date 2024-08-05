@@ -386,7 +386,6 @@ def project_widget(project):
         sheet = st.file_uploader("Timesheet", type=".xlsx")
         
         if st.button("Atualizar", use_container_width=True, disabled=sheet is None):
-            st.checkbox()
             update_project(project, sheet)
 
     with st.expander("Gerar Folhas de Afetação"):
