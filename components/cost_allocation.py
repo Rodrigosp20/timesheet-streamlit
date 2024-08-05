@@ -9,10 +9,12 @@ def format_table(df: pd.DataFrame):
     return styled_df.format("{:.2f} €")
     
 
-def get_column_config(columns: pd.Index):
+def get_column_config(columns: pd.Index, extras:list = []):
 
     config = {col: st.column_config.NumberColumn(col, width="small") for col in columns}
     config[''] = st.column_config.TextColumn("", width="medium")
+    for ex in extras:
+        config[ex] = st.column_config.TextColumn(ex, width="small")
 
     return config
  
@@ -50,7 +52,6 @@ def get_wp_costs(activities, work, planned_work, sheet):
     work= work.pivot_table(index="person", columns="date", values="hours")
     
     pw = planned_work.pivot_table(index=['person', "wp", "trl","activity"], columns='date', values='hours', aggfunc="sum")
-    print(pw)
 
     planned_work = planned_work.pivot_table(index=['person', "wp", "trl"], columns='date', values='hours', aggfunc="sum")
     
@@ -67,7 +68,6 @@ def get_wp_costs(activities, work, planned_work, sheet):
     costs = affection.mul(sheet['sal'])
     costs.columns = costs.columns.strftime('%b/%y')
 
-
     wps_costs = costs.groupby(['wp']).sum()
     
     wp_trl_costs = costs.groupby(['wp', 'trl']).sum()
@@ -75,14 +75,22 @@ def get_wp_costs(activities, work, planned_work, sheet):
 
 def cost_allocation_widget(project) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+    work['hours'] = work['hours'].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+    planned_work['hours'] = planned_work['hours'].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     sheet = st.session_state.sheets.query('person in @work["person"].unique() and date >= @project["start_date"] and date <= @project["end_date"]')[["person", "date", "Jornada Diária", "SS", "Salário"]]
+    sheet[[ "Jornada Diária", "SS", "Salário"]] = sheet[["Jornada Diária", "SS", "Salário"]].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     activities = st.session_state.activities.query('project == @project["name"]')
 
     working_days = st.session_state.working_days.query('project == @project["name"]')
+    working_days['day'] = working_days['day'].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     sheet = sheet.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
     
-    get_topbar(project['name'])
+    get_topbar(project['name'], buttons=False)
     
     if not planned_work.empty:
         
@@ -107,9 +115,10 @@ def cost_allocation_widget(project) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Data
         cost_act = cost_act.sort_index(level=['wp','activity']).groupby(level=["wp", "activity"]).sum()
         cost_act.columns = cost_act.columns.strftime('%b/%y')
         
+        
         st.dataframe(
-            cost_act,
-            column_config=get_column_config(total.columns)
+            format_table(cost_act),
+            column_config=get_column_config(total.columns, extras=['wp','activity'])
         )
         
     sync_dataframes()

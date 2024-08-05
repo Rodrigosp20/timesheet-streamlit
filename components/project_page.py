@@ -6,6 +6,130 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill, Font
 from openpyxl.formatting.rule import CellIsRule
 
+def find_person_sheet(name, sheets):
+    print(name)
+    for sheet in sheets:
+        if name.lower() in sheet.lower():
+            return sheet
+    
+    return None
+
+def update_project(project, file, other_activities = True):
+
+    contracts = st.session_state.contracts.query('project == @project["name"]')
+    activities = st.session_state.activities.query('project == @project["name"]')
+    
+    sheets_name = pd.ExcelFile(file).sheet_names
+
+    first_sheet = True
+    sheets = pd.DataFrame()
+    planned_works = pd.DataFrame()
+    real_works = pd.DataFrame()
+ 
+
+    for contract in contracts.itertuples(index=False):
+
+        if not (sheet := find_person_sheet(contract.person, sheets_name)):
+            continue
+
+        df = pd.read_excel(file, sheet_name=sheet, header=3, usecols="D:AZ")
+
+        df = df.rename(columns={df.columns[0]: 'date'})
+        df = df.set_index("date")
+
+
+        date_range = (df.columns >= pd.to_datetime(contract.start_date)) & (df.columns <= pd.to_datetime(contract.end_date))
+        contract_range = df.columns[date_range]
+
+        try:
+            sheet = df.loc[['Jornada diária', 'N.º de dias \núteis','Faltas (horas/mês)','Férias (horas/mês)','Salário atualizado (€)','SS'], contract_range].fillna(0)
+        except:
+            raise Exception(f"Folha {sheet}: Erro na leitura da folha de horas")
+        
+        sheet = sheet.transpose().reset_index(names="date")
+        
+        sheet = sheet.rename(columns={
+            "Jornada diária":"Jornada Diária",
+            "N.º de dias \núteis":"day",
+            "Faltas (horas/mês)":"Faltas",
+            "Férias (horas/mês)":"Férias",
+            "Salário atualizado (€)":"Salário"
+        })
+
+        try:
+            sheet[['Jornada Diária', 'day', 'Faltas', 'Férias', 'Salário']] = sheet[['Jornada Diária', 'day', 'Faltas', 'Férias', 'Salário']].astype('float64')
+        except:
+            raise Exception(f"Erro a ler a folha {sheet} - Não foi possível converter a folha com Números Inválidos")
+    
+        sheet["SS"] = sheet["SS"] * 100
+        sheet["person"] = contract.person
+        sheet["date"] = pd.to_datetime(sheet['date'])
+
+        if first_sheet:
+            working_days = sheet[["date", "day"]]
+            first_sheet = False
+        
+        sheet.drop('day', axis='columns', inplace=True)
+        sheets = pd.concat([sheets, sheet])
+        
+        try:
+            planned_work = df.loc[activities['activity'].unique(), contract_range]
+        except:
+            raise Exception(f"Folha {sheet}: Não foram encontradas as atividades")
+        
+        planned_work = planned_work[~planned_work.index.duplicated()].fillna(0)
+
+        planned_work = planned_work.reset_index(names="activity").melt(id_vars='activity', var_name='date', value_name='hours')
+        planned_work['person'] = contract.person
+        planned_work['project'] = project["name"]
+        
+        try:
+            planned_work["date"] = pd.to_datetime(planned_work['date']) 
+        except:
+            raise Exception(f"Folha {sheet}: Erro a converter datas da folha")
+
+        planned_works = pd.concat([planned_works, planned_work])
+        
+        try:
+            real_work = df.loc[['Horas Reais PRR'], contract_range]
+        except:
+            raise Exception(f"Folha {sheet}: Não foi encontrado as Horas Reais [Horas Reais PRR]")
+
+        try:
+            index_position = df.index.get_loc('Outras atividades')
+            other_activities = df.iloc[index_position-3:index_position].loc[:, contract_range]
+            other_activities= other_activities[other_activities.index.notna()]
+        except:
+            raise Exception(f"Folha {sheet}: Erro a ler outras atividades")
+
+        real_work = pd.concat([real_work, other_activities]).fillna(0)
+        real_work = real_work.reset_index(names="project").melt(id_vars='project', var_name='date', value_name='hours')
+
+        real_work['person'] = contract.person
+        real_work['date'] = pd.to_datetime(real_work['date'])
+        real_work.loc[real_work['project'] == 'Horas Reais PRR', 'project'] = project["name"]
+
+        real_works = pd.concat([real_works, real_work])
+    
+
+    st.session_state.sheets = pd.concat([st.session_state.sheets , sheets])
+    st.session_state.sheets = st.session_state.sheets.drop_duplicates(subset=["person","date"], keep='last')
+
+    st.session_state.real_work = pd.concat([st.session_state.real_work , real_works])
+    st.session_state.real_work = st.session_state.real_work.drop_duplicates(subset=["person","project","date"], keep='last')
+
+    st.session_state.working_days = pd.concat([st.session_state.working_days, working_days])
+    st.session_state.working_days = st.session_state.working_days.drop_duplicates(subset=["project","date"], keep='last')
+
+    for act in activities.itertuples(index=False):
+        planned_works = planned_works.query('~ (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
+    
+    st.session_state.planned_work = pd.concat([st.session_state.planned_work , planned_works])
+    st.session_state.planned_work = st.session_state.planned_work.drop_duplicates(subset=["project","person","activity","date"], keep='last')
+   
+       
+    set_notification("success", "Projeto atualizado com sucesso", force_reset=True)
+
 def delete_project(project):
     st.session_state.projects = st.session_state.projects.query('name != @project["name"]')
     st.session_state.activities = st.session_state.activities.query('project != @project["name"]')
@@ -244,7 +368,6 @@ def project_widget(project):
         start_date = st.date_input("Data de Inicio", key=f"project_date_initial_{st.session_state.key}", value=project['start_date'], format="DD/MM/YYYY", max_value=project['start_date'])
         end_date = st.date_input("Data de Termino", key=f"project_date_final_{st.session_state.key}", value=project['end_date'], format="DD/MM/YYYY", min_value=project['end_date'])
 
-    
         if save:
             update_project_dates(project, start_date, end_date)
 
@@ -259,6 +382,12 @@ def project_widget(project):
 
             get_dialog("Eliminar Projeto", "Se continuar o projeto será eliminado e não será possível recuperá-lo, continuar mesmo assim ?", action)
 
+    with st.expander("Atualizar Projeto c/Timesheet"):
+        sheet = st.file_uploader("Timesheet", type=".xlsx")
+        
+        if st.button("Atualizar", use_container_width=True, disabled=sheet is None):
+            st.checkbox()
+            update_project(project, sheet)
 
     with st.expander("Gerar Folhas de Afetação"):
         start_date, end_date = st.slider(

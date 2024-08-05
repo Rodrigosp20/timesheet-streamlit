@@ -3,11 +3,20 @@ import pandas as pd
 import numpy as np
 from utils import get_topbar, sync_dataframes
 
+def get_column_config(columns: pd.Index, extras:list = []):
+
+    config = {col: st.column_config.NumberColumn(col, width="small") for col in columns}
+    config[''] = st.column_config.TextColumn("", width="medium")
+    for ex in extras:
+        config[ex] = st.column_config.TextColumn(ex, width="small")
+
+    return config
+
 @st.cache_data
 def get_ftes_gender(work, contracts, sheets):
     ftes = work.merge(contracts, on=["person", "project"])
     ftes = ftes.merge(sheets, on=["person", "date"])
-
+    
     ftes['FTE'] = (ftes['hours'] / (ftes['Jornada Diária'] * ftes['Dias Úteis'] - ftes['Férias']).replace(0, np.nan)).fillna(0)
     ftes = ftes.pivot_table(index='gender', columns='date', values='FTE', aggfunc='sum')
     ftes.columns = ftes.columns.strftime('%b/%y')
@@ -32,12 +41,20 @@ def get_wp_hours(planned_work, activities, work):
 
 def time_allocation_widget(project):
     work = st.session_state.real_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+    work['hours'] = work['hours'].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     activities = st.session_state.activities.query('project == @project["name"]')
     planned_work = st.session_state.planned_work.query('project == @project["name"] and date >= @project["start_date"] and date <= @project["end_date"]')
+    planned_work['hours'] = planned_work['hours'].apply(pd.to_numeric, errors='coerce').fillna(0)
 
     contracts = st.session_state.contracts[["person", "project", "gender"]]
+
     working_days = st.session_state.working_days.query('project == @project["name"]')
+    working_days['day'] = working_days['day'].apply(pd.to_numeric, errors='coerce').fillna(0)
+
     sheets = st.session_state.sheets[["person", "date", "Jornada Diária", "Férias"]]
+    sheets[['Jornada Diária', 'Férias']] = sheets[['Jornada Diária', 'Férias']].apply(pd.to_numeric, errors='coerce').fillna(0)
+
     sheets = sheets.merge(working_days[['date', 'day']], on="date", how="left").rename(columns={'day':'Dias Úteis'})
     
     get_topbar(project['name'], buttons=False)

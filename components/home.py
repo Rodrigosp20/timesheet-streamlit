@@ -88,7 +88,6 @@ def read_timesheet(file):
     except:
         raise Exception("Erro a ler a equipa de projeto")
     
-   
     try:
         timeline = pd.read_excel(file, sheet_name="Cronograma", usecols=[1, 5], header=8, names=["activity","trl"])
     except:

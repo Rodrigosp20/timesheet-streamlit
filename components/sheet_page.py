@@ -107,9 +107,8 @@ def sheet_widget(project):
         sheet, activities, real_work, planned_work = fetch_data(project, person, start_date, end_date)
         
         st.subheader("Folha de Horas") ######### Folha de Horas
-
         modifications = st.data_editor(
-            sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]],
+            sheet.loc[['Jornada Diária', 'Dias Úteis', 'Faltas', 'Férias', "Horas Reais"]].apply(pd.to_numeric, errors='coerce').fillna(0),
             key = get_dataframe_key("Hours", person),
             use_container_width=True,
             column_order=columns_order,
@@ -207,7 +206,7 @@ def sheet_widget(project):
             wp_work.columns = wp_work.columns.strftime('%b/%y')
 
             wp_sheet_modifications = st.data_editor(
-                wp_work,
+                wp_work.apply(pd.to_numeric, errors='coerce'),
                 use_container_width=True,
                 column_order=columns_order,
                 disabled=disabled_columns,
@@ -258,7 +257,7 @@ def sheet_widget(project):
         other_projects = other_projects.query('index in @project_list or index in @non_removable_projects')
         
         other_projects = st.data_editor(
-            other_projects,
+            other_projects.apply(pd.to_numeric, errors='coerce'),
             use_container_width=True,
             column_order=columns_order,
             key=get_dataframe_key("other_project", person),
@@ -285,8 +284,7 @@ def sheet_widget(project):
             df['person'] = person
             
             df = df.dropna(subset="hours")
-            
-            print(df, project["name"])
+
             st.session_state.real_work.query('~ (person == @person and project != @project["name"] and date >= @start_date and date <= @end_date)', inplace=True)
             st.session_state.real_work = pd.concat([st.session_state.real_work, df])
 
@@ -365,7 +363,7 @@ def sheet_widget(project):
                 column_config={
                     "wp":st.column_config.TextColumn(
                         "WP",
-                        width="medium"
+                        width="small"
                     ),
                     "trl":st.column_config.TextColumn(
                         "TRL",
