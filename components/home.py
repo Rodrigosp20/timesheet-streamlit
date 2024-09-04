@@ -154,7 +154,6 @@ def read_timesheet(file):
     cols_to_convert = ['start_date','end_date','real_start_date','real_end_date']
     activities[cols_to_convert] = activities[cols_to_convert].apply(pd.to_datetime)
 
-
     sheets = pd.DataFrame()
     planned_works = pd.DataFrame()
     real_works = pd.DataFrame()
@@ -246,7 +245,7 @@ def read_timesheet(file):
         real_works['person'] = real_works['person'].str.title()
         planned_works['person'] = planned_works['person'].str.title()
     
-    return team, activities, sheets, planned_works, real_works, start_date, end_date, working_days
+    return team, activities, sheets, planned_works,   real_works, start_date, end_date, working_days
 
 def home_widget():
 
