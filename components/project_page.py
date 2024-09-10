@@ -69,18 +69,18 @@ def generate_timesheet(project):
             ws[f'F{act_index+1}'].value = act.trl.split()[1]
             
             for col in range(7, 55):
-                date = pd.Timestamp(project['start_date'] + relativedelta(months= col-7))
+                date = get_first_date(pd.Timestamp(project['start_date'] + relativedelta(months= col-7)))
 
-                if  date >= act.start_date and date <= act.end_date:
+                if  compare(date, act.start_date, act.end_date):
 
-                    if date >= act.real_start_date and date <= act.real_end_date:
+                    if compare(date, act.real_start_date, act.real_end_date):
                         ws.cell(act_index+1, col).style =  'Ativo'
                     else:
                         ws.cell(act_index+1, col).style =  'Planeado'
                     
                 else:
 
-                    if date >= act.real_start_date and date <= act.real_end_date:
+                    if compare(date, act.real_start_date, act.real_end_date):
                         ws.cell(act_index+1, col).style =  'Real'
 
         map = {}
@@ -124,7 +124,7 @@ def generate_timesheet(project):
                 sheet[f'D{i}'] = work
 
             for col in range(5,53):
-                date = pd.Timestamp(project['start_date'] + relativedelta(months= col-5))
+                date = get_first_date(pd.Timestamp(project['start_date'] + relativedelta(months= col-5)))
 
                 c_sh = sh.query('date == @date')
                 
@@ -544,8 +544,6 @@ def generate_input(project):
         sheet.title= f"{person_line-8}. {contract.person}"
         
         # Sheet Filling
-        
-        sheet['E239'] = ArrayFormula("E239:AZ239", "=SE(E('Equipa de projeto'!$T$9>0,'Equipa de projeto'!$T$9<=E4),'Equipa de projeto'!$S$9,SE(E('Equipa de projeto'!$R$9>0,'Equipa de projeto'!$R$9<=E4),'Equipa de projeto'!$Q$9,SE(E('Equipa de projeto'!$P$9>0,'Equipa de projeto'!$P$9<=E4),'Equipa de projeto'!$O$9,SE('Equipa de projeto'!$N$9<F4,'Equipa de projeto'!$M$9,0))))")
         for col, date in enumerate(pd.date_range(start=start, end=end, freq="MS"), start=5):
             
             if not (row := df.query('date == @date')).empty:
@@ -566,7 +564,7 @@ def generate_input(project):
                         sheet.cell(row=line, column=col, value=val if (val:= row['hours'].iloc[0]) != 0 else "")
         
         sheet.sheet_view.showGridLines = False
-
+    
     del wb["sheet"]
 
     return wb

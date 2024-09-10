@@ -5,6 +5,9 @@ from datetime import timedelta, datetime
 import numpy as np
 from utils import * 
 
+def format_zeros_and_negatives(row):
+    return 'color:#BFBFBF;' if row == 0 else 'color: #FF6565;' if row < 0 else ''
+
 def format_zeros(row):
     return 'color:#BFBFBF;' if row == 0 else ''
 
@@ -93,7 +96,8 @@ def sheet_widget(project):
         """, unsafe_allow_html=True)
         
         #Filter Start and End date
-        filter_start, filter_end = st.slider("", min_value=get_first_date(project["start_date"]), max_value=project["end_date"], format="MMMM/YYYY", value=(project["start_date"], project["end_date"]), step=timedelta(weeks=4))
+       
+        filter_start, filter_end = st.slider("", min_value=get_first_date(project["start_date"]), max_value=get_first_date(project["end_date"]), format="MMMM/YYYY", value=(get_first_date(project["start_date"]), get_first_date(project["end_date"])), step=timedelta(weeks=4))
         disabled_columns = get_disabled_columns(project)
         columns_order = get_column_order(filter_start, filter_end)
         
@@ -118,19 +122,21 @@ def sheet_widget(project):
 
         modifications.loc['Horas Trabalhadas'] = modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Faltas'].fillna(0) - modifications.loc['Férias'].fillna(0)
         modifications.loc['FTE'] = (modifications.loc['Horas Reais'].fillna(0) / (modifications.loc['Jornada Diária'].fillna(0) * modifications.loc['Dias Úteis'].fillna(0) - modifications.loc['Férias'].fillna(0)).replace(0, np.nan)).fillna(0)
+        
+        modifications_container = st.container()
 
         
-        st.dataframe(
-            modifications.loc[['Horas Trabalhadas', 'FTE']].style.format("{:.2f}").map(format_zeros),
-            use_container_width=True,
-            column_order=columns_order,
-            column_config=get_columns_config(start_date, end_date, 'Integer')
-        )
+        # st.dataframe(
+        #     modifications.loc[['Horas Trabalhadas', 'FTE']].style.format("{:.2f}").map(format_zeros),
+        #     use_container_width=True,
+        #     column_order=columns_order,
+        #     column_config=get_columns_config(start_date, end_date, 'Integer')
+        # )
         modifications.loc['Salário'] = None
         modifications.loc['SS'] = None
 
         
-        st.subheader("Folha Salarial") ########
+        st.subheader("Folha Salarial") ######## Folha Salarial
         
         if st.toggle("Tabela Vertical"):
             
@@ -269,6 +275,17 @@ def sheet_widget(project):
         df_style = remainder.style.map(format_zeros)
         df_style = df_style.format("{:.0f}")
         df_style = df_style.apply(highlight_negative ,axis=1)
+
+
+        modifications.loc["Horas Planeadas"] = summary_wp.sum()
+        modifications.loc["Horas Restantes"] = modifications.loc['Horas Trabalhadas'] - other_projects.sum(axis=0) - modifications.loc['Horas Reais'].fillna(0)
+
+        modifications_container.dataframe(
+            modifications.loc[['Horas Trabalhadas', 'FTE', 'Horas Planeadas', "Horas Restantes"]].style.format("{:.2f}").map(format_zeros_and_negatives),
+            use_container_width=True,
+            column_order=columns_order,
+            column_config=get_columns_config(start_date, end_date, 'Integer')
+        )
         
         st.dataframe(
             df_style,

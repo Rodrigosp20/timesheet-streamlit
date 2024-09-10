@@ -194,7 +194,7 @@ def get_first_date(date):
     if not date:
         return None
     
-    return datetime.date(date.year, date.month, 1)
+    return datetime.date(int(date.year), int(date.month), 1)
 
 def get_last_date(date):
     _, last_day = calendar.monthrange(date.year, date.month)
@@ -374,3 +374,34 @@ def sync_dataframes():
     """
     
     components.html(js, height=0)
+
+
+def compare(date_to, lower_date = None, higher_date = None):
+
+    if not lower_date and not higher_date:
+        return None
+    
+    def to_first_of_month(d):
+        if not d:
+            return None
+        
+        if isinstance(d, pd.Timestamp):
+            return datetime.date(d.year, d.month, 1)
+        elif isinstance(d, datetime.datetime):
+            return datetime.date(d.year, d.month, 1)
+        elif isinstance(d, datetime.date):
+            return datetime.date(d.year, d.month, 1)
+        else:
+            raise TypeError("Unsupported date type")
+    
+    date_to = to_first_of_month(date_to)
+    lower_date = to_first_of_month(lower_date)
+    higher_date = to_first_of_month(higher_date)
+
+    if lower_date and date_to < lower_date:
+        return False
+    
+    if higher_date and date_to > higher_date:
+        return False
+    
+    return True
