@@ -496,7 +496,7 @@ def generate_input(project):
     project_planned_work = st.session_state.planned_work.query('project == @project["name"]').merge(st.session_state.activities[['activity', "wp", 'trl']], on="activity", how="left")
 
     acts = []
-
+    project_planned_work = project_planned_work.sort_values(by="activity")
     for offset, wp in enumerate(project_planned_work["wp"].unique()):
         line = 14 + 11 * offset
 

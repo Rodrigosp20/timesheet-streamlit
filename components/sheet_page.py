@@ -125,17 +125,9 @@ def sheet_widget(project):
         
         modifications_container = st.container()
 
-        
-        # st.dataframe(
-        #     modifications.loc[['Horas Trabalhadas', 'FTE']].style.format("{:.2f}").map(format_zeros),
-        #     use_container_width=True,
-        #     column_order=columns_order,
-        #     column_config=get_columns_config(start_date, end_date, 'Integer')
-        # )
         modifications.loc['Salário'] = None
         modifications.loc['SS'] = None
-
-        
+ 
         st.subheader("Folha Salarial") ######## Folha Salarial
         
         if st.toggle("Tabela Vertical"):
@@ -255,7 +247,6 @@ def sheet_widget(project):
         other_projects = other_projects.pivot_table(index='project', columns='date', values='hours')
         other_projects = pd.concat([pd.DataFrame(columns=sheet.columns), other_projects])
 
-
         for project_ in project_list:
             if project_ not in other_projects.index:
                 other_projects.loc[project_] = None
@@ -316,9 +307,11 @@ def sheet_widget(project):
                 wp_sheet.replace(np.nan, 0, inplace=True)
 
                 for act in st.session_state.activities.query('project == @project["name"]').itertuples(index=False):
-                    wp_sheet = wp_sheet.query('not (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
+                    wp_sheet = wp_sheet.query('not (activity == @act.activity and (date < @get_first_date(@act.real_start_date) or date > @get_first_date(@act.real_end_date)))')
+                    # wp_sheet = wp_sheet.query('not (activity == @act.activity and (date < @act.real_start_date or date > @act.real_end_date))')
+
                     
-                st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @start_date or date > @end_date)')
+                st.session_state.planned_work = st.session_state.planned_work.query('(person != @person) or (project != @project["name"]) or (date < @get_first_date(@start_date) or date > @get_first_date(@end_date))')
                 st.session_state.planned_work = pd.concat([st.session_state.planned_work, wp_sheet])
                 st.session_state.notification= {"message":"Atualizado", "type":"success"}
                 reset_key()
