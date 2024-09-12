@@ -72,7 +72,7 @@ def generate_timesheet(project):
                 date = get_first_date(pd.Timestamp(project['start_date'] + relativedelta(months= col-7)))
 
                 if  compare(date, act.start_date, act.end_date):
-
+                    
                     if compare(date, act.real_start_date, act.real_end_date):
                         ws.cell(act_index+1, col).style =  'Ativo'
                     else:
@@ -95,9 +95,9 @@ def generate_timesheet(project):
             ws[f'E{line}'] = contract.gender
             ws[f'F{line}'] = contract.start_date
 
-            sh = st.session_state.sheets.query('person == @contract.person and date >= @contract.start_date and date <= @contract.end_date')
-            planned = st.session_state.planned_work.query('person == @contract.person and project == @project["name"] and date >= @contract.start_date and date <= @contract.end_date')
-            real = st.session_state.real_work.query('person == @contract.person and date >= @contract.start_date and date <= @contract.end_date').sort_values(by=['project', 'date'])
+            sh = st.session_state.sheets.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
+            planned = st.session_state.planned_work.query('person == @contract.person and project == @project["name"] and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
+            real = st.session_state.real_work.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)').sort_values(by=['project', 'date'])
             working_days = st.session_state.working_days.query('project == @project["name"]')
 
             salary_list = get_salary_table(sh)
@@ -178,7 +178,6 @@ def generate_timesheet(project):
         return wb
 
 def find_person_sheet(name, sheets):
-    print(name)
     for sheet in sheets:
         if name.lower() in sheet.lower():
             return sheet
@@ -494,9 +493,21 @@ def generate_input(project):
     project_working_days = st.session_state.working_days.query('project == @project["name"]')
     project_sheets = st.session_state.sheets.query('person in @project_contracts["person"].unique() and date >= @start and date <= @end').merge(project_working_days[["date","day"]], on="date", how="left")
     project_planned_work = st.session_state.planned_work.query('project == @project["name"]').merge(st.session_state.activities[['activity', "wp", 'trl']], on="activity", how="left")
+    project_real_work = st.session_state.real_work.query('project == @project["name"] and date >= @start and date <= @end')
 
     acts = []
     project_planned_work = project_planned_work.sort_values(by="activity")
+    
+
+    #Calculate Real Hours p/ Activity    
+    sum_wp = project_planned_work.groupby(['person', 'wp', 'date'])['hours'].sum().reset_index().rename(columns={'hours':'wp_total_hours'})
+    project_planned_work = pd.merge(project_planned_work, sum_wp, how="left", on=["person", "wp", "date"]).rename(columns={"hours":"planned_hours"})
+    
+    project_planned_work = pd.merge(project_planned_work, project_real_work[["person", "date", "hours"]], how="left", on=["person", "date"]).rename(columns={"hours":"real_hours"})
+    project_planned_work["real_hours"] = (project_planned_work["planned_hours"] / project_planned_work["wp_total_hours"] * project_planned_work["real_hours"]).fillna(0)
+
+
+    # Write Activities Names
     for offset, wp in enumerate(project_planned_work["wp"].unique()):
         line = 14 + 11 * offset
 
@@ -513,7 +524,8 @@ def generate_input(project):
             wp_acts.append(act.activity)
 
         acts.append(wp_acts)
-
+    
+    # Hide Unused Acitivty Slots
     for i in range(line + 11, 124):
 
         template.row_dimensions[i].hidden = True
@@ -543,9 +555,11 @@ def generate_input(project):
         sheet = wb.copy_worksheet(template)
         sheet.title= f"{person_line-8}. {contract.person}"
         
-        # Sheet Filling
+        # Worker Sheet Filling
         for col, date in enumerate(pd.date_range(start=start, end=end, freq="MS"), start=5):
             
+            # wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+
             if not (row := df.query('date == @date')).empty:
 
                 sheet.cell(row=5, column=col, value= row['Jornada Diária'].iloc[0])
@@ -561,7 +575,8 @@ def generate_input(project):
 
                     if not (row:= df_planned.query('activity == @act and date == @date')).empty:
 
-                        sheet.cell(row=line, column=col, value=val if (val:= row['hours'].iloc[0]) != 0 else "")
+                        sheet.cell(row=line, column=col, value=val if (val:= row['planned_hours'].iloc[0]) != 0 else "")
+                        sheet.cell(row=line + 112, column=col, value=val if (val:= row['real_hours'].iloc[0]) != 0 else "")
         
         sheet.sheet_view.showGridLines = False
     
