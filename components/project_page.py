@@ -3,12 +3,14 @@ import streamlit as st
 from utils import *
 from io import BytesIO
 import numpy as np
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.styles import PatternFill, Font
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.workbook.properties import CalcProperties
 from dateutil.relativedelta import relativedelta
 from openpyxl.worksheet.formula import ArrayFormula
+from datetime import timedelta
+
 
 @st.cache_data
 def get_salary_table(data):
@@ -36,23 +38,26 @@ def update_sheet_references(workbook, map:dict):
 
                     cell.value = formula
 
-def generate_timesheet(project):
+def generate_timesheet(project, start_date, end_date):
     wb = load_workbook("assets/Timesheet.xlsx")
          
-    ws = wb['Cronograma']
 
     acts_df = st.session_state.activities.query('project == @project["name"]')
     
+    filter_start = get_first_date(start_date)
+    filter_end = get_first_date(end_date)
     
     wp_lines = [10, 141, 272, 403, 534, 665, 796, 927, 1058, 1189]
     act_line = 3
 
+    ws = wb['Cronograma']
     ws['G9'] = project['start_date']
 
     assert len(acts_df['wp'].unique()) <= 10
     
     acts = {}
 
+    ## Fill Cronograma
     for i, wp in enumerate(acts_df['wp'].unique()):
         
         wp_index = wp_lines[i]
@@ -65,7 +70,6 @@ def generate_timesheet(project):
             ws[f'B{act_index}'] = act.activity
             acts[wp].append(act.activity)
 
-            # print(f'F{act_index+1}')
             ws[f'F{act_index+1}'].value = act.trl.split()[1]
             
             for col in range(7, 55):
@@ -82,100 +86,113 @@ def generate_timesheet(project):
 
                     if compare(date, act.real_start_date, act.real_end_date):
                         ws.cell(act_index+1, col).style =  'Real'
-
-        map = {}
         
-        ws = wb['Equipa de projeto']
-        contracts = st.session_state.contracts.query('project == @project["name"]')
-        for line, contract in enumerate(contracts.itertuples(index=False), start=9):
-            sheet_ind = line - 8
-            
-            ws[f'C{line}'] = contract.profile
-            ws[f'D{line}'] = contract.person
-            ws[f'E{line}'] = contract.gender
-            ws[f'F{line}'] = contract.start_date
+        for i in range(act_index + 2, 1321):
+            ws.row_dimensions[i].hidden = True
 
-            sh = st.session_state.sheets.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
-            planned = st.session_state.planned_work.query('person == @contract.person and project == @project["name"] and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
-            real = st.session_state.real_work.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)').sort_values(by=['project', 'date'])
-            working_days = st.session_state.working_days.query('project == @project["name"]')
-
-            salary_list = get_salary_table(sh)
-            for i,data in enumerate(salary_list):
-                ws.cell(line, 13 + i*2).value = data[1]
-                ws.cell(line, 14 + i*2).value = data[0]
-
-            sheet = wb[f'{sheet_ind}. TBD']
-            sheet.title = f'{sheet_ind}. {contract.person}'
-            sheet.sheet_state = 'visible'
-
-            sheet['D129'] = 'Horas Reais'
-
-            map[f'{sheet_ind}. TBD'] = f'{sheet_ind}. {contract.person}'
-
-            for col in sheet.iter_cols(min_col=1, max_col=55, min_row=1, max_row=1):
-                for cell in col:
-                    cell.value = ""
-
-            for i, work in enumerate(real.query('project != @project["name"]')['project'].unique(), start=124):
-                if i==128:
-                    break
-
-                sheet[f'D{i}'] = work
-
-            for col in range(5,53):
-                date = get_first_date(pd.Timestamp(project['start_date'] + relativedelta(months= col-5)))
-
-                c_sh = sh.query('date == @date')
-                
-                if not c_sh.empty:
-
-                    sheet.cell(5, col).value = c_sh.iloc[0]['Jornada Diária']
-                    sheet.cell(8, col).value = c_sh.iloc[0]['Faltas']
-                    sheet.cell(9, col).value = c_sh.iloc[0]['Férias']
-
-                wd_sh = working_days.query("date == @date")
-                if not wd_sh.empty:
-                    sheet.cell(6, col).value = wd_sh.iloc[0]['day']
-                else:
-                    sheet.cell(6, col).value = ''
-                
-                p_sh = planned.query('date == @date')
-                if not p_sh.empty:
-
-                    for i, act_list in enumerate(acts.values()):
-                        line = 15 + i*11
-
-                        for line,act in enumerate(act_list,line):
-                            if not (act_row := p_sh.query('activity == @act')).empty:
-                                sheet.cell(line, col).value = act_row.iloc[0]['hours']
-                    
-                    for row in range(line+1,124):
-                        sheet.row_dimensions[row].hidden= True
-                
-                r_sh = real.query('project != @project["name"] and date == @date')
-                if not r_sh.empty:
-
-                    for line, work in enumerate(r_sh.itertuples(index=False), start=124):
-                        sheet.cell(line,col).value = work.hours
-
-                pr_sh = real.query('project == @project["name"] and date == @date') 
-                if not pr_sh.empty:
-                    sheet.cell(129, col).value = pr_sh.iloc[0]["hours"]   
-                
-                for row in range(130,332):
-                    sheet.row_dimensions[row].hidden= True
-        
-        for i in range(sheet_ind + 1, 61):
-            ws = wb[f'{i}. TBD']
-            
-            for col in ws.iter_cols(min_col=5, max_col=52, min_row=6, max_row=6):
-                for cell in col:
-                    cell.value = ""
-            
-        update_sheet_references(wb, map)
+    map = {}
     
-        return wb
+    ws = wb['Equipa de projeto']
+    contracts = st.session_state.contracts.query('project == @project["name"]')
+    
+    #Fill Equipa de Projeto
+    for line, contract in enumerate(contracts.itertuples(index=False), start=9):
+        sheet_ind = line - 8
+        
+        ws[f'C{line}'] = contract.profile
+        ws[f'D{line}'] = contract.person
+        ws[f'E{line}'] = contract.gender
+        ws[f'F{line}'] = contract.start_date
+
+        #Get Profile data
+        sh = st.session_state.sheets.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
+        planned = st.session_state.planned_work.query('person == @contract.person and project == @project["name"] and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)')
+        real = st.session_state.real_work.query('person == @contract.person and date >= @get_first_date(@contract.start_date) and date <= @get_first_date(@contract.end_date)').sort_values(by=['project', 'date'])
+        working_days = st.session_state.working_days.query('project == @project["name"]')
+
+        salary_list = get_salary_table(sh)
+        for i,data in enumerate(salary_list):
+            ws.cell(line, 13 + i*2).value = data[1]
+            ws.cell(line, 14 + i*2).value = data[0]
+
+        sheet = wb[f'{sheet_ind}. TBD']
+        sheet.title = f'{sheet_ind}. {contract.person}'
+        sheet.sheet_state = 'visible'
+
+        sheet['D129'] = 'Horas Reais'
+
+        map[f'{sheet_ind}. TBD'] = f'{sheet_ind}. {contract.person}'
+
+        for col in sheet.iter_cols(min_col=1, max_col=55, min_row=1, max_row=1):
+            for cell in col:
+                cell.value = ""
+
+        for i, work in enumerate(real.query('project != @project["name"]')['project'].unique(), start=124):
+            if i==128:
+                break
+
+            sheet[f'D{i}'] = work
+
+        # Fill Profile Sheet
+        for i,col in enumerate(range(column_index_from_string('E'), column_index_from_string('BA'))):
+            date = get_first_date(start_date + relativedelta(months=i))
+
+            
+            if compare(date, filter_start, filter_end):
+                sheet.column_dimensions[get_column_letter(col)].hidden = False
+            else:
+                sheet.column_dimensions[get_column_letter(col)].hidden = True
+
+            c_sh = sh.query('date == @date')
+            
+            if not c_sh.empty:
+
+                sheet.cell(5, col).value = c_sh.iloc[0]['Jornada Diária']
+                sheet.cell(8, col).value = c_sh.iloc[0]['Faltas']
+                sheet.cell(9, col).value = c_sh.iloc[0]['Férias']
+
+            wd_sh = working_days.query("date == @date")
+            if not wd_sh.empty:
+                sheet.cell(6, col).value = wd_sh.iloc[0]['day']
+            else:
+                sheet.cell(6, col).value = ''
+            
+            p_sh = planned.query('date == @date')
+            if not p_sh.empty:
+
+                for i, act_list in enumerate(acts.values()):
+                    line = 15 + i*11
+
+                    for line,act in enumerate(act_list,line):
+                        if not (act_row := p_sh.query('activity == @act')).empty:
+                            sheet.cell(line, col).value = act_row.iloc[0]['hours']
+                
+                for row in range(line+1,124):
+                    sheet.row_dimensions[row].hidden= True
+            
+            r_sh = real.query('project != @project["name"] and date == @date')
+            if not r_sh.empty:
+
+                for line, work in enumerate(r_sh.itertuples(index=False), start=124):
+                    sheet.cell(line,col).value = work.hours
+
+            pr_sh = real.query('project == @project["name"] and date == @date') 
+            if not pr_sh.empty:
+                sheet.cell(129, col).value = pr_sh.iloc[0]["hours"]   
+            
+            for row in range(130,332):
+                sheet.row_dimensions[row].hidden= True
+        
+    for i in range(sheet_ind + 1, 61):
+        ws = wb[f'{i}. TBD']
+        
+        for col in ws.iter_cols(min_col=5, max_col=52, min_row=6, max_row=6):
+            for cell in col:
+                cell.value = ""
+        
+    update_sheet_references(wb, map)
+
+    return wb
 
 def find_person_sheet(name, sheets):
     for sheet in sheets:
@@ -480,9 +497,12 @@ def generate_sheets(project, start, end):
 
     return wb
 
-def generate_input(project):
+def generate_input(project, start_date, end_date):
     wb = load_workbook('assets/Timesheet - Input.xlsx')
     template = wb['sheet']
+
+    filter_start = get_first_date(start_date)
+    filter_end = get_first_date(end_date)
 
     start = get_first_date(project["start_date"])
     end = get_last_date(project["end_date"])
@@ -504,7 +524,7 @@ def generate_input(project):
     project_planned_work = pd.merge(project_planned_work, sum_wp, how="left", on=["person", "wp", "date"]).rename(columns={"hours":"planned_hours"})
     
     project_planned_work = pd.merge(project_planned_work, project_real_work[["person", "date", "hours"]], how="left", on=["person", "date"]).rename(columns={"hours":"real_hours"})
-    project_planned_work["real_hours"] = (project_planned_work["planned_hours"] / project_planned_work["wp_total_hours"] * project_planned_work["real_hours"]).fillna(0)
+    project_planned_work["real_hours"] = (project_planned_work["planned_hours"] / project_planned_work["wp_total_hours"].replace(0, np.nan) * project_planned_work["real_hours"]).fillna(0)
 
 
     # Write Activities Names
@@ -531,6 +551,16 @@ def generate_input(project):
         template.row_dimensions[i].hidden = True
         template.row_dimensions[i + 112].hidden = True
 
+    #Hide filtered Dates Column
+    for i,col in enumerate(range(column_index_from_string('E'), column_index_from_string('BA'))):
+        date = start_date + relativedelta(months=i)
+        
+        if compare(date, filter_start, filter_end):
+            template.column_dimensions[get_column_letter(col)].hidden = False
+        else:
+            template.column_dimensions[get_column_letter(col)].hidden = True
+
+
     team_ws = wb['Equipa de projeto']
 
     for person_line, contract in enumerate(project_contracts.itertuples(index=False),9):
@@ -554,11 +584,18 @@ def generate_input(project):
 
         sheet = wb.copy_worksheet(template)
         sheet.title= f"{person_line-8}. {contract.person}"
-        
+
+        person_real_work = st.session_state.real_work.query('person == @contract.person and project != @project["name"] and date >= @start and date <= @end').sort_values(by="project")
+        other_projects = person_real_work["project"].unique()
+        for row, project_name in enumerate(other_projects, start=236):
+            sheet.cell(row=row, column=4, value=project_name)
+
+
         # Worker Sheet Filling
         for col, date in enumerate(pd.date_range(start=start, end=end, freq="MS"), start=5):
             
             # wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
+            sheet.cell(row=1, column=1 , value= contract.person)
 
             if not (row := df.query('date == @date')).empty:
 
@@ -577,7 +614,13 @@ def generate_input(project):
 
                         sheet.cell(row=line, column=col, value=val if (val:= row['planned_hours'].iloc[0]) != 0 else "")
                         sheet.cell(row=line + 112, column=col, value=val if (val:= row['real_hours'].iloc[0]) != 0 else "")
-        
+
+            for line, project_name in enumerate(other_projects,start=236):
+                if not (row:= person_real_work.query('project == @project_name and date == @date')).empty:
+                    sheet.cell(row=line, column=col, value= val if (val:= row['hours'].iloc[0]) != 0 else "")
+                
+                
+
         sheet.sheet_view.showGridLines = False
     
     del wb["sheet"]
@@ -761,23 +804,25 @@ def project_widget(project):
 
             save_excel(virtual_workbook.getvalue(), f"fpp_{project['name']}.xlsx")
     
-    with st.expander("Gerar Folha de Input"):
-        if st.button("Gerar Input", use_container_width=True):
-            wb = generate_input(project)
-            virtual_workbook = BytesIO()
-            wb.save(virtual_workbook)
-            virtual_workbook.seek(0)
-
-            save_excel(virtual_workbook.getvalue(), f"{project['name']}.xlsx")
-    
     with st.expander("Exportar Timesheet"):
+
+        client_version = st.toggle("Versão Cliente")
+        
+        filter_start, filter_end = st.slider("", min_value=get_first_date(project["start_date"]), max_value=get_first_date(project["end_date"]), format="MMMM/YYYY", value=(get_first_date(project["start_date"]), get_first_date(project["end_date"])), step=timedelta(weeks=4))
+        
         if st.button("Gerar Excel", key="timesheet", use_container_width=True):
             
-            wb = generate_timesheet(project)
+            if client_version:
+                wb = generate_input(project, filter_start, filter_end)
+            else:
+                wb = generate_timesheet(project, filter_start, filter_end)
 
             virtual_workbook = BytesIO()
             wb.save(virtual_workbook)
             virtual_workbook.seek(0)
 
-            save_excel(virtual_workbook.getvalue(), f"{project['name']}.xlsx")
+            save_excel(virtual_workbook.getvalue(), f"timesheet_{project['name']}{'_cliente' if client_version else ''}.xlsx")
     
+
+
+
