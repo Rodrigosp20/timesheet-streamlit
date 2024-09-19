@@ -560,7 +560,6 @@ def generate_input(project, start_date, end_date):
         else:
             template.column_dimensions[get_column_letter(col)].hidden = True
 
-
     team_ws = wb['Equipa de projeto']
 
     for person_line, contract in enumerate(project_contracts.itertuples(index=False),9):
@@ -595,7 +594,7 @@ def generate_input(project, start_date, end_date):
         for col, date in enumerate(pd.date_range(start=start, end=end, freq="MS"), start=5):
             
             # wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
-            sheet.cell(row=1, column=1 , value= contract.person)
+            sheet.cell(row=1, column=1 , value= f"{contract.person} - {contract.profile}")
 
             if not (row := df.query('date == @date')).empty:
 
