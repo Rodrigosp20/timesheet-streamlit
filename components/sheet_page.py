@@ -161,7 +161,17 @@ def sheet_widget(project):
                 column_config=get_columns_config(start_date, end_date, 'Float'),
             )
         
-        modifications.loc['Custo Aproximado'] =  ( modifications.loc['Horas Reais'] / (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan) * modifications.loc['Salário']*14 / 11 * (1 + modifications.loc['SS'] / 100)).fillna(0)
+        modifications.loc['Custo Aproximado'] =  round_down( 
+            (
+                round_down(
+                    modifications.loc['Horas Reais'] / 
+                    (modifications.loc['Jornada Diária'] * modifications.loc['Dias Úteis']).replace(0, np.nan),
+                    4
+                ) *
+                modifications.loc['Salário'] * (14 / 11) * 
+                ( 1 + modifications.loc['SS'] / 100)
+            ).fillna(0),
+        2)
 
         if save:  #Update Folha de Horas
             to_update = modifications.transpose()

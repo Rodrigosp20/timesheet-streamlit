@@ -1,4 +1,10 @@
-import datetime, calendar, pickle, base64, pandas as pd, streamlit as st
+import numpy as np
+import datetime
+import calendar
+import pickle
+import base64
+import pandas as pd
+import streamlit as st
 import time
 import threading
 from typing import Literal
@@ -10,7 +16,7 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ct
 notification_container = None
 DATA_VERSION = 3
 
-# Data Schema 
+# Data Schema
 projects_schema = {
     "name": "string",
     "start_date": "datetime64[ns]",
@@ -19,10 +25,10 @@ projects_schema = {
 }
 
 persons_schema = {
-    "name" : "string",
+    "name": "string",
     "gender": "string"
 }
- 
+
 activities_schema = {
     "project": "string",
     "wp": "string",
@@ -35,97 +41,108 @@ activities_schema = {
 }
 
 contracts_schema = {
-    "project":"string",
-    "person":"string",
-    "profile":"string",
+    "project": "string",
+    "person": "string",
+    "profile": "string",
     "gender": "string",
     "start_date": "datetime64[ns]",
     "end_date": "datetime64[ns]",
 }
 
 working_days_schema = {
-    "project":"string",
-    "date":"datetime64[ns]",
-    "day":"int64"
+    "project": "string",
+    "date": "datetime64[ns]",
+    "day": "int64"
 }
 
 sheets_schema = {
-    "person" : "string",
-    "date" : "datetime64[ns]",
-    "Jornada Diária" : "int64",
-    "Faltas" : "float64",
-    "Férias" : "float64",
-    "Salário" : "float64",
-    "SS" : "float64",
+    "person": "string",
+    "date": "datetime64[ns]",
+    "Jornada Diária": "int64",
+    "Faltas": "float64",
+    "Férias": "float64",
+    "Salário": "float64",
+    "SS": "float64",
 }
 
 real_work_schema = {
-    "person" : "string",
-    "project" : "string",
-    "date" : "datetime64[ns]",
-    "hours" : "int64"
+    "person": "string",
+    "project": "string",
+    "date": "datetime64[ns]",
+    "hours": "int64"
 }
 
 planned_work_schema = {
-    "person" : "string",
+    "person": "string",
     "project": "string",
-    "activity" : "string",
-    "date" : "datetime64[ns]",
-    "hours" : "int64"
+    "activity": "string",
+    "date": "datetime64[ns]",
+    "hours": "int64"
 }
 
 inv_order_num_schema = {
-    'project' : 'string',
+    'project': 'string',
     "wp": "string",
     "trl": "string",
-    "code" : "string"
+    "code": "string"
 }
+
 
 def create_session(reset=False):
     """ Initialize streamlit session variables """
-    
+
     if 'key' not in st.session_state:
         st.session_state.key = 0
 
     if 'to_reset' not in st.session_state:
         st.session_state.to_reset = False
-    
+
     if 'notification' not in st.session_state:
         st.session_state.notification = None
-    
+
     if 'unsaved' not in st.session_state or reset:
         st.session_state.unsaved = False
-        
+
     if 'file_id' not in st.session_state or reset:
         if reset:
-            st.session_state.file_id = (st.session_state.file_id + 1) % 2 
+            st.session_state.file_id = (st.session_state.file_id + 1) % 2
         else:
             st.session_state.file_id = 0
-    
+
     if 'company_name' not in st.session_state or reset:
         st.session_state.company_name = ""
 
     if 'activities' not in st.session_state or reset:
-        st.session_state.activities = pd.DataFrame(columns=activities_schema.keys()).astype(activities_schema)
-        st.session_state.persons = pd.DataFrame(columns=persons_schema.keys()).astype(persons_schema)
-        st.session_state.contracts = pd.DataFrame(columns=contracts_schema.keys()).astype(contracts_schema)
-        st.session_state.projects = pd.DataFrame(columns=projects_schema.keys()).astype(projects_schema)
-        st.session_state.sheets = pd.DataFrame(columns=sheets_schema.keys()).astype(sheets_schema)
-        st.session_state.planned_work = pd.DataFrame(columns=planned_work_schema.keys()).astype(planned_work_schema)
-        st.session_state.real_work = pd.DataFrame(columns=real_work_schema.keys()).astype(real_work_schema)
-        st.session_state.working_days = pd.DataFrame(columns=working_days_schema.keys()).astype(working_days_schema)
-        st.session_state.inv_order_num = pd.DataFrame(columns=inv_order_num_schema.keys()).astype(inv_order_num_schema)
+        st.session_state.activities = pd.DataFrame(
+            columns=activities_schema.keys()).astype(activities_schema)
+        st.session_state.persons = pd.DataFrame(
+            columns=persons_schema.keys()).astype(persons_schema)
+        st.session_state.contracts = pd.DataFrame(
+            columns=contracts_schema.keys()).astype(contracts_schema)
+        st.session_state.projects = pd.DataFrame(
+            columns=projects_schema.keys()).astype(projects_schema)
+        st.session_state.sheets = pd.DataFrame(
+            columns=sheets_schema.keys()).astype(sheets_schema)
+        st.session_state.planned_work = pd.DataFrame(
+            columns=planned_work_schema.keys()).astype(planned_work_schema)
+        st.session_state.real_work = pd.DataFrame(
+            columns=real_work_schema.keys()).astype(real_work_schema)
+        st.session_state.working_days = pd.DataFrame(
+            columns=working_days_schema.keys()).astype(working_days_schema)
+        st.session_state.inv_order_num = pd.DataFrame(
+            columns=inv_order_num_schema.keys()).astype(inv_order_num_schema)
+
 
 def save_data():
     """ Download all data """
 
     object_to_download = pickle.dumps({
-        'activities':st.session_state.activities,
-        'contracts':st.session_state.contracts,
-        'projects':st.session_state.projects,
+        'activities': st.session_state.activities,
+        'contracts': st.session_state.contracts,
+        'projects': st.session_state.projects,
         'sheets': st.session_state.sheets,
-        'planned_work' : st.session_state.planned_work,
-        'real_work' : st.session_state.real_work,
+        'planned_work': st.session_state.planned_work,
+        'real_work': st.session_state.real_work,
         'working_days': st.session_state.working_days,
         'persons': st.session_state.persons,
         'inv_order_num': st.session_state.inv_order_num,
@@ -152,6 +169,7 @@ def save_data():
 
     st.session_state.unsaved = False
 
+
 def save_excel(file, name):
     b64 = base64.b64encode(file).decode()
 
@@ -170,42 +188,50 @@ def save_excel(file, name):
         height=0,
     )
 
+
 def invalid(*args):
     """ Check if variables aren't empty """
-    
+
     for arg in args:
         if arg is None:
             return True
-        
+
         if type(arg) == str and len(arg) == 0:
             return True
-    
+
     return False
 
+
 def date_range(start, end):
-    months_range = pd.date_range(start=get_first_date(start), end=get_last_date(end), freq='MS')
+    months_range = pd.date_range(start=get_first_date(
+        start), end=get_last_date(end), freq='MS')
     return [month.strftime('%b/%y') for month in months_range]
+
 
 def reset_key():
     st.session_state.key = (st.session_state.key + 1) % 2
     st.rerun()
 
+
 def get_first_date(date):
     if not date:
         return None
-    
+
     return datetime.date(int(date.year), int(date.month), 1)
+
 
 def get_last_date(date):
     _, last_day = calendar.monthrange(date.year, date.month)
     return datetime.date(date.year, date.month, last_day)
+
 
 def extract_cell_colors_and_dates(file):
     # Load the Excel workbook
     wb = load_workbook(file, data_only=True)
     ws = wb['Cronograma']
 
-    months = pd.read_excel(file, sheet_name="Cronograma", header=8, nrows=0).iloc[:, 6:]
+    months = pd.read_excel(file, sheet_name="Cronograma",
+                           header=8, nrows=0).iloc[:, 6:]
 
     # Initialize an empty list to store cell colors
     colors_data = []
@@ -222,7 +248,7 @@ def extract_cell_colors_and_dates(file):
 
     # Convert the list of colors into a DataFrame
     df = pd.DataFrame(colors_data)
-    df = df.iloc[:, 6: 6+len(months.columns)] 
+    df = df.iloc[:, 6: 6+len(months.columns)]
 
     active_color = ws['G1325'].fill.start_color.index
     deactivated_color = ws['O1326'].fill.start_color.index
@@ -231,10 +257,11 @@ def extract_cell_colors_and_dates(file):
     df = df.replace(active_color, 1)
     df = df.replace(deactivated_color, -1)
     df = df.replace(extended_color, 2)
-    
+
     df.columns = months.columns
 
     return df, months.columns[0], months.columns[-1]
+
 
 def min_max_dates(row, value1, value2):
     dates = []
@@ -245,8 +272,9 @@ def min_max_dates(row, value1, value2):
         return None, None
     return get_first_date(min(dates)), get_last_date(max(dates))
 
+
 @st.experimental_dialog("Pretende Continuar?", width="large")
-def get_dialog(title:str, paragraph:str, action):
+def get_dialog(title: str, paragraph: str, action):
     st.title(title)
     st.write(paragraph)
 
@@ -254,17 +282,18 @@ def get_dialog(title:str, paragraph:str, action):
     if c1.button("Continuar", use_container_width=True):
         action()
         st.rerun()
-    
+
     if c2.button("Cancelar", use_container_width=True):
         st.rerun()
 
-def get_topbar(title:str, buttons=True) ->tuple[bool, bool] | None:
-    with st.container(border= True):
-     
-        c1, c2 = st.columns([0.7,0.3] if buttons else [0.9999,0.0001])
+
+def get_topbar(title: str, buttons=True) -> tuple[bool, bool] | None:
+    with st.container(border=True):
+
+        c1, c2 = st.columns([0.7, 0.3] if buttons else [0.9999, 0.0001])
 
         c1.header(title)
-        
+
         if buttons:
             with c2:
                 if save := st.button(":floppy_disk: Guardar", use_container_width=True):
@@ -273,27 +302,28 @@ def get_topbar(title:str, buttons=True) ->tuple[bool, bool] | None:
 
             return save, undo
 
-def set_notification(type: Literal['warning', 'error', 'success'], message:str, force_reset=False):
 
-    st.session_state.notification= {"message":message, "type":type}
+def set_notification(type: Literal['warning', 'error', 'success'], message: str, force_reset=False):
+
+    st.session_state.notification = {"message": message, "type": type}
 
     if force_reset:
         return reset_key()
-    
+
     global notification_container
-    
+
     match type:
         case 'warning':
             notification_container.warning(message, icon="⚠️")
         case 'error':
             notification_container.error(message, icon="🚨")
         case'success':
-            notification_container.success(message, icon="✅") 
+            notification_container.success(message, icon="✅")
 
-    
+
 def check_notification():
     global notification_container
-    
+
     st.markdown("""
         <style>
             div.stAlert > div > div > div > div{
@@ -311,17 +341,20 @@ def check_notification():
         </style>
     """, unsafe_allow_html=True)
 
-    notification_container =  st.empty()
+    notification_container = st.empty()
 
     if notification := st.session_state.notification:
 
         match notification['type']:
             case 'warning':
-                notification_container.warning(notification['message'], icon="⚠️")
+                notification_container.warning(
+                    notification['message'], icon="⚠️")
             case 'error':
                 notification_container.error(notification['message'], icon="🚨")
             case'success':
-                notification_container.success(notification['message'], icon="✅") 
+                notification_container.success(
+                    notification['message'], icon="✅")
+
 
 def fade_notification():
     global notification_container
@@ -331,7 +364,8 @@ def fade_notification():
         notification_container.empty()
 
         notification_container = None
-        st.session_state.notification = None 
+        st.session_state.notification = None
+
 
 def warning_before_leave():
     if st.session_state.unsaved:
@@ -344,13 +378,14 @@ def warning_before_leave():
         """
         components.html(js, height=0)
 
+
 def sync_dataframes():
     if 'run' not in st.session_state:
         st.session_state.run = 0
     else:
         st.session_state.run = (st.session_state.run + 1) % 2
 
-    js =f"""
+    js = f"""
         <script>
         hash = "{st.session_state.run}";
         tables = window.parent.document.querySelectorAll('.dvn-scroller');
@@ -372,19 +407,19 @@ def sync_dataframes():
         }});
         </script>
     """
-    
+
     components.html(js, height=0)
 
 
-def compare(date_to, lower_date = None, higher_date = None):
+def compare(date_to, lower_date=None, higher_date=None):
 
     if not lower_date and not higher_date:
         return None
-    
+
     def to_first_of_month(d):
         if not d:
             return None
-        
+
         if isinstance(d, pd.Timestamp):
             return datetime.date(d.year, d.month, 1)
         elif isinstance(d, datetime.datetime):
@@ -393,15 +428,124 @@ def compare(date_to, lower_date = None, higher_date = None):
             return datetime.date(d.year, d.month, 1)
         else:
             raise TypeError("Unsupported date type")
-    
+
     date_to = to_first_of_month(date_to)
     lower_date = to_first_of_month(lower_date)
     higher_date = to_first_of_month(higher_date)
 
     if lower_date and date_to < lower_date:
         return False
-    
+
     if higher_date and date_to > higher_date:
         return False
-    
+
     return True
+
+
+def floor_map(x, decimal_places):
+    if isinstance(x, float):
+        factor = 10 ** decimal_places
+        return np.floor(x * factor) / factor
+    return x
+
+
+def round_down(serie, decimal_places=0):
+    fator = 10 ** decimal_places
+
+    # Apply flooring only to non-NaN numbers that are floats
+    def floor_if_float(x):
+        if pd.isna(x):
+            return np.nan
+        elif isinstance(x, float):
+            return np.floor(x * fator) / fator
+        else:
+            return x  # Leave integers unchanged
+
+    return serie.apply(floor_if_float)
+
+
+def selected_operation():
+    html_code = """
+    
+    <div id="statistics">
+        <div class="stats-header">Statistics</div>
+        <div class="stats-row">
+            <div class="stats-cell">Max:</div>
+            <div class="stats-cell" id="maxValue">0.00</div>
+            <div class="stats-cell">Min:</div>
+            <div class="stats-cell" id="minValue">0.00</div>
+            <div class="stats-cell">Sum:</div>
+            <div class="stats-cell" id="sumValue">0.00</div>
+            <div class="stats-cell">Mean:</div>
+            <div class="stats-cell" id="meanValue">0.00</div>
+        </div>
+    </div>
+
+    <script>
+        let calculationTimeout;
+        const doc = window.parent.document;
+
+        const xpath = "(//div[@data-testid='element-container'])[last()]";
+        const container = doc.evaluate(xpath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+        function calculateStatistics() {
+            // Get all td elements with aria-selected="true"
+            const selectedCells = doc.querySelectorAll('td[aria-selected="true"]');
+            
+            // Convert inner text of each cell to a number and filter out NaN values
+            const values = Array.from(selectedCells).map(cell => parseFloat(cell.innerText)).filter(num => !isNaN(num));
+
+            if (values.length < 2) {
+                container.style.display = 'none';
+                return;
+            }
+
+            const sum = values.reduce((a, b) => a + b, 0);
+
+            document.getElementById('maxValue').innerText = (Math.max(...values) || 0).toFixed(2);
+            document.getElementById('minValue').innerText = (Math.min(...values) || 0).toFixed(2);
+            document.getElementById('sumValue').innerText = (sum || 0).toFixed(2);
+            document.getElementById('meanValue').innerText = (sum / values.length || 0).toFixed(2);
+            
+            container.style.display = 'block';
+        }
+
+        // Listen for mouseup event to trigger calculation
+        doc.addEventListener('mouseup', () => {
+            clearTimeout(calculationTimeout);
+            calculationTimeout = setTimeout(calculateStatistics, 200);  // Adjust the delay as needed
+        });
+
+    </script>
+
+    <style>
+        .stats-header {
+            background-color: rgba(255, 0, 0, 0.8); /* Red header background with transparency */
+            color: white;               /* Header text color */
+            padding: 10px;              /* Padding around header */
+            font-weight: bold;          /* Bold header text */
+            text-align: center;         /* Centered text */
+            border-radius: 5px;        /* Rounded corners */
+        }
+        .stats-row {
+            display: flex;              /* Use flexbox for horizontal layout */
+            justify-content: space-between; /* Space items evenly */
+            padding: 5px 0;            /* Padding for rows */
+            border-bottom: 1px solid rgba(200, 200, 200, 0.5); /* Bottom border with transparency */
+        }
+        .stats-cell {
+            flex: 1;                   /* Flex to fill space */
+            text-align: center;        /* Centered text */
+            padding: 5px;             /* Padding in cells */
+            color: white;             /* White text for contrast */
+        }
+        .stats-row:last-child {
+            border-bottom: none;       /* Remove bottom border from last row */
+        }
+        .stats-row:hover {
+            background-color: rgba(255, 0, 0, 0.2); /* Change background on hover with transparency */
+        }
+    </style>
+    """
+    # Display the HTML component with JavaScript in Streamlit
+    components.html(html_code, height=75, width=625)

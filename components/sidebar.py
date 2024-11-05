@@ -124,7 +124,7 @@ def sidebar_widget() -> str:
                     use_container_width=True
                 )
 
-            with open("assets/Timesheet.xlsx", "rb") as file:
+            with open("assets/Timesheet_Template.xlsx", "rb") as file:
                 st.download_button(
                     label="Template Timesheet",
                     data=file,
