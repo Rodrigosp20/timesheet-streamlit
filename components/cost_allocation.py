@@ -6,7 +6,8 @@ from utils import *
 
 
 def format_table(df: pd.DataFrame):
-    styled_df = df.style.map(lambda x: '' if x > 0 else 'color:#BFBFBF;')
+    styled_df = df.style.map(
+        lambda x: '' if x > 0 else 'color:#FAD0C4;' if x < 0 else 'color:#BFBFBF;')
     return styled_df.format("{:.2f} €")
 
 
@@ -155,10 +156,11 @@ def cost_allocation_widget(project):
         total = pd.DataFrame(columns=costs.columns)
         total.loc['Total Real'] = wps_costs.sum(axis=0)
         total.loc['Total Planeado'] = planned_cost.sum(axis=0)
-        total.loc['Desvio'] = total.loc['Total Planeado'] - \
+
+        desvio = total.loc['Total Planeado'] - \
             total.loc['Total Real']
 
-        total['Total'] = total.sum(axis=1)
+        total.loc['Desvio Acumulado'] = desvio.cumsum()
 
         st.dataframe(
             format_table(total),
