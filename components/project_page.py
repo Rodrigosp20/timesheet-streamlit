@@ -576,21 +576,21 @@ def generate_input(project, start_date, end_date):
     filter_start = get_first_date(start_date)
     filter_end = get_first_date(end_date)
 
-    start = get_first_date(project["start_date"])
-    end = get_last_date(project["end_date"])
+    project_start_date = get_first_date(project["start_date"])
+    project_end_date = get_last_date(project["end_date"])
 
-    template['E4'] = start
+    template['E4'] = project_start_date
 
     project_contracts = st.session_state.contracts.query(
         'project == @project["name"]')
     project_working_days = st.session_state.working_days.query(
         'project == @project["name"]')
     project_sheets = st.session_state.sheets.query(
-        'person in @project_contracts["person"].unique() and date >= @start and date <= @end').merge(project_working_days[["date", "day"]], on="date", how="left")
+        'person in @project_contracts["person"].unique() and date >= @project_start_date and date <= @project_end_date').merge(project_working_days[["date", "day"]], on="date", how="left")
     project_planned_work = st.session_state.planned_work.query('project == @project["name"]').merge(
         st.session_state.activities[['activity', "wp", 'trl']], on="activity", how="left")
     project_real_work = st.session_state.real_work.query(
-        'project == @project["name"] and date >= @start and date <= @end')
+        'project == @project["name"] and date >= @project_start_date and date <= @project_end_date')
 
     acts = []
     project_planned_work = project_planned_work.sort_values(by="activity")
@@ -632,7 +632,7 @@ def generate_input(project, start_date, end_date):
 
     # Hide filtered Dates Column
     for i, col in enumerate(range(column_index_from_string('E'), column_index_from_string('BA'))):
-        date = start_date + relativedelta(months=i)
+        date = project_start_date + relativedelta(months=i)
 
         if compare(date, filter_start, filter_end):
             template.column_dimensions[get_column_letter(col)].hidden = False
@@ -664,13 +664,14 @@ def generate_input(project, start_date, end_date):
         sheet.title = f"{person_line-8}. {contract.person}"
 
         person_real_work = st.session_state.real_work.query(
-            'person == @contract.person and project != @project["name"] and date >= @start and date <= @end').sort_values(by="project")
+            'person == @contract.person and project != @project["name"] and date >= @project_start_date and date <= @project_end_date').sort_values(by="project")
         other_projects = person_real_work["project"].unique()
         for row, project_name in enumerate(other_projects, start=236):
             sheet.cell(row=row, column=4, value=project_name)
 
         # Worker Sheet Filling
-        for col, date in enumerate(pd.date_range(start=start, end=end, freq="MS"), start=5):
+        for i, col in enumerate(range(column_index_from_string('E'), column_index_from_string('BA'))):
+            date = project_start_date + relativedelta(months=i)
 
             # wp_sheet = ((wp_sheet / sum_wp * modifications.loc['Horas Reais']) / horas_trabalhaveis ).fillna(0)
             sheet.cell(row=1, column=1,
