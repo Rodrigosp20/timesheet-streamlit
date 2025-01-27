@@ -596,15 +596,15 @@ def generate_input(project, start_date, end_date):
     project_planned_work = project_planned_work.sort_values(by="activity")
 
     # Calculate Real Hours p/ Activity
-    sum_wp = project_planned_work.groupby(['person', 'wp', 'date'])['hours'].sum(
-    ).reset_index().rename(columns={'hours': 'wp_total_hours'})
-    project_planned_work = pd.merge(project_planned_work, sum_wp, how="left", on=[
-                                    "person", "wp", "date"]).rename(columns={"hours": "planned_hours"})
+    planned_sum = project_planned_work.groupby(['person', 'date'])['hours'].sum(
+    ).reset_index().rename(columns={'hours': 'total_planned_hours'})
+    project_planned_work = pd.merge(project_planned_work, planned_sum, how="left", on=[
+                                    "person", "date"]).rename(columns={"hours": "planned_hours"})
 
     project_planned_work = pd.merge(project_planned_work, project_real_work[[
                                     "person", "date", "hours"]], how="left", on=["person", "date"]).rename(columns={"hours": "real_hours"})
     project_planned_work["real_hours"] = (project_planned_work["planned_hours"] /
-                                          project_planned_work["wp_total_hours"].replace(0, np.nan) * project_planned_work["real_hours"]).fillna(0)
+                                          project_planned_work["total_planned_hours"].replace(0, np.nan) * project_planned_work["real_hours"]).fillna(0)
 
     # Write Activities Names
     for offset, wp in enumerate(project_planned_work["wp"].unique()):
