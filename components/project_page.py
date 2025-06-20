@@ -418,6 +418,7 @@ def generate_sheets(project, start, end):
 
     x = initial_diff + 5
     for date in pd.date_range(start=start, end=end, freq="MS"):
+        template.column_dimensions[get_column_letter(x)].hidden = False
         template.cell(row=4, column=x, value=date.strftime("%b/%y"))
         x += 1
 
@@ -496,8 +497,16 @@ def generate_sheets(project, start, end):
         real_work = project_work.pivot(
             index="person", columns="date", values="hours")
 
+        real_hours_person = (
+            real_work
+            .reindex(index=[contract.person],  
+                    fill_value=np.nan)        
+            .squeeze()                      
+        )
+
+
         planned_work = ((planned_work / sum_wp *
-                        real_work.loc[contract.person]).div(horas_trabalhaveis)).fillna(0)
+                        real_hours_person).div(horas_trabalhaveis)).fillna(0)
         planned_work = planned_work.reset_index(names="activity")
 
         planned_work = planned_work.merge(
