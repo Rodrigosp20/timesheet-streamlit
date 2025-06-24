@@ -1,5 +1,5 @@
 # Use the official Python image from Docker Hub
-FROM python:latest
+FROM python:3.11-slim
 
 # Install any dependencies specified in requirements.txt
 RUN pip install streamlit
