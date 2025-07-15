@@ -52,7 +52,8 @@ def generate_timesheet(project, start_date, end_date):
     act_line = 3
 
     ws = wb['Cronograma']
-    ws['G9'] = project['start_date']
+    # ws['G9'] = project['start_date']
+    ws['G9'] = filter_start
 
     assert len(acts_df['wp'].unique()) <= 10
 
@@ -142,13 +143,22 @@ def generate_timesheet(project, start_date, end_date):
 
         # Fill Profile Sheet
         for i, col in enumerate(range(column_index_from_string('E'), column_index_from_string('BA'))):
+            # date = get_first_date(
+            #     project['start_date'] + relativedelta(months=i))
             date = get_first_date(
-                project['start_date'] + relativedelta(months=i))
+                filter_start + relativedelta(months=i))
+            
+            wd_sh = working_days.query("date == @date")
+            if not wd_sh.empty:
+                sheet.cell(6, col).value = wd_sh.iloc[0]['day']
+            else:
+                sheet.cell(6, col).value = ''
 
             if compare(date, filter_start, filter_end):
                 sheet.column_dimensions[get_column_letter(col)].hidden = False
             else:
                 sheet.column_dimensions[get_column_letter(col)].hidden = True
+                continue
 
             c_sh = sh.query('date == @date')
 
@@ -161,12 +171,6 @@ def generate_timesheet(project, start_date, end_date):
                 if previous_ss != (ss := c_sh.iloc[0]['SS']):
                     sheet.cell(358, col).value = ss / 100
                     previous_ss = ss
-
-            wd_sh = working_days.query("date == @date")
-            if not wd_sh.empty:
-                sheet.cell(6, col).value = wd_sh.iloc[0]['day']
-            else:
-                sheet.cell(6, col).value = ''
 
             p_sh = planned.query('date == @date')
             if not p_sh.empty:
@@ -192,8 +196,8 @@ def generate_timesheet(project, start_date, end_date):
             if not pr_sh.empty:
                 sheet.cell(129, col).value = pr_sh.iloc[0]["hours"]
 
-            for row in range(130, 332):
-                sheet.row_dimensions[row].hidden = True
+        for row in range(130, 332):
+            sheet.row_dimensions[row].hidden = True
 
     for i in range(sheet_ind + 1, 61):
         ws = wb[f'{i}. TBD']
@@ -349,6 +353,48 @@ def update_project(project, file, other_activities=True):
 
     set_notification(
         "success", "Projeto atualizado com sucesso", force_reset=True)
+
+
+def update_salary_sheet(file, project_name):
+    contracts = st.session_state.contracts.query('project == @project_name')
+    sheets_name = pd.ExcelFile(file).sheet_names
+
+    # Clona dados existentes para atualização local
+    existing = st.session_state.sheets.copy()
+    updated_sheets = existing.copy()
+
+    for contract in contracts.itertuples(index=False):
+        sheet_name = find_person_sheet(contract.person, sheets_name)
+        if not sheet_name:
+            st.warning(f"Folha para {contract.person} não encontrada. Ignorando.")
+            continue
+
+        df = pd.read_excel(file, sheet_name=sheet_name, header=3, usecols="D:AZ")
+        df = df.rename(columns={df.columns[0]: 'date'}).set_index('date')
+
+        mask = (df.columns >= pd.to_datetime(contract.start_date)) & \
+               (df.columns <= pd.to_datetime(contract.end_date))
+        cols = df.columns[mask]
+
+        if 'Salário atualizado (€)' not in df.index:
+            st.error(f"Folha {sheet_name}: Coluna 'Salário atualizado (€)' não encontrada.")
+            continue
+
+        sheet_sal = df.loc[['Salário atualizado (€)'], cols].transpose().reset_index()
+        sheet_sal.columns = ['date', 'Salário']
+        sheet_sal['SS'] = 0
+        sheet_sal['person'] = contract.person
+        sheet_sal['date'] = pd.to_datetime(sheet_sal['date'])
+
+        # Remove registros antigos deste contrato neste período
+        mask_existing = (updated_sheets['person'] == contract.person) & \
+                        (updated_sheets['date'].isin(sheet_sal['date']))
+        updated_sheets = pd.concat([updated_sheets[~mask_existing], sheet_sal], ignore_index=True)
+
+    # Ao finalizar loop, aplica alterações em session_state
+    st.session_state.sheets = updated_sheets.drop_duplicates(subset=['person','date'], keep='last')
+
+    set_notification("success", "Salários atualizados com sucesso!")
 
 
 def delete_project(project):
@@ -810,10 +856,14 @@ def project_widget(project):
                 "Eliminar Projeto", "Se continuar o projeto será eliminado e não será possível recuperá-lo, continuar mesmo assim ?", action)
 
     with st.expander("Atualizar Projeto c/Timesheet"):
+        only_salary = st.toggle("Somente remunerações")
         sheet = st.file_uploader("Timesheet", type=".xlsx")
 
         if st.button("Atualizar", use_container_width=True, disabled=sheet is None):
-            update_project(project, sheet)
+            if only_salary:
+                update_salary_sheet(sheet, project["name"])
+            else:
+                update_project(project, sheet)
 
     with st.expander("Gerar Folhas de Afetação"):
         start_date, end_date = st.slider(
