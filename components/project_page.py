@@ -359,9 +359,8 @@ def update_salary_sheet(file, project_name):
     contracts = st.session_state.contracts.query('project == @project_name')
     sheets_name = pd.ExcelFile(file).sheet_names
 
-    # Clona dados existentes para atualização local
-    existing = st.session_state.sheets.copy()
-    updated_sheets = existing.copy()
+    # Buffer local: cópia do estado atual para modificações seguras
+    buffer = st.session_state.sheets.copy()
 
     for contract in contracts.itertuples(index=False):
         sheet_name = find_person_sheet(contract.person, sheets_name)
@@ -369,32 +368,35 @@ def update_salary_sheet(file, project_name):
             st.warning(f"Folha para {contract.person} não encontrada. Ignorando.")
             continue
 
+        # Lê dados da aba da pessoa
         df = pd.read_excel(file, sheet_name=sheet_name, header=3, usecols="D:AZ")
         df = df.rename(columns={df.columns[0]: 'date'}).set_index('date')
 
-        # print(df)
+        # Filtra intervalo de datas do contrato
+        cols = [c for c in df.columns if pd.to_datetime(c) >= pd.to_datetime(contract.start_date) and pd.to_datetime(c) <= pd.to_datetime(contract.end_date)]
 
-        mask = (df.columns >= pd.to_datetime(contract.start_date)) & \
-               (df.columns <= pd.to_datetime(contract.end_date))
-        cols = df.columns[mask]
-
+        # Verifica existência de colunas chave
         if 'Salário atualizado (€)' not in df.index or 'SS' not in df.index:
-            return st.error(f"Folha {sheet_name}: Informação Salarial não foi encontrada.")
+            st.error(f"Folha {sheet_name}: Informação Salarial não encontrada.")
+            return
 
-        sheet_sal = df.loc[['Salário atualizado (€)', 'SS'], cols].transpose().reset_index()
-        sheet_sal.columns = ['date', 'Salário', 'SS']
+        # Prepara DataFrame temporário com Salário e SS
+        temp = df.loc[['Salário atualizado (€)', 'SS'], cols].transpose().reset_index()
+        temp.columns = ['date', 'Salário', 'SS']
+        # Converte SS para percentual
+        temp['SS'] = temp['SS'] * 100
+        temp['person'] = contract.person
+        temp['date'] = pd.to_datetime(temp['date'])
 
-        sheet_sal["SS"] = sheet_sal["SS"] * 100
-        sheet_sal['person'] = contract.person
-        sheet_sal['date'] = pd.to_datetime(sheet_sal['date'])
+        # Atualiza buffer: sobrescreve ou adiciona
+        for row in temp.itertuples(index=False):
+            match = (buffer['person'] == row.person) & (buffer['date'] == row.date)
+            if match.any():
+                buffer.loc[match, 'Salário'] = row.Salário
+                buffer.loc[match, 'SS'] = row.SS
 
-        # Remove registros antigos deste contrato neste período
-        mask_existing = (updated_sheets['person'] == contract.person) & \
-                        (updated_sheets['date'].isin(sheet_sal['date']))
-        updated_sheets = pd.concat([updated_sheets[~mask_existing], sheet_sal], ignore_index=True)
-
-    # Ao finalizar loop, aplica alterações em session_state
-    st.session_state.sheets = updated_sheets.drop_duplicates(subset=['person','date'], keep='last')
+    # Aplica o buffer ao session_state apenas no final
+    st.session_state.sheets = buffer
 
     set_notification("success", "Salários atualizados com sucesso!")
 
