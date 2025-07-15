@@ -372,17 +372,19 @@ def update_salary_sheet(file, project_name):
         df = pd.read_excel(file, sheet_name=sheet_name, header=3, usecols="D:AZ")
         df = df.rename(columns={df.columns[0]: 'date'}).set_index('date')
 
+        # print(df)
+
         mask = (df.columns >= pd.to_datetime(contract.start_date)) & \
                (df.columns <= pd.to_datetime(contract.end_date))
         cols = df.columns[mask]
 
-        if 'Salário atualizado (€)' not in df.index:
-            st.error(f"Folha {sheet_name}: Coluna 'Salário atualizado (€)' não encontrada.")
-            continue
+        if 'Salário atualizado (€)' not in df.index or 'SS' not in df.index:
+            return st.error(f"Folha {sheet_name}: Informação Salarial não foi encontrada.")
 
-        sheet_sal = df.loc[['Salário atualizado (€)'], cols].transpose().reset_index()
-        sheet_sal.columns = ['date', 'Salário']
-        sheet_sal['SS'] = 0
+        sheet_sal = df.loc[['Salário atualizado (€)', 'SS'], cols].transpose().reset_index()
+        sheet_sal.columns = ['date', 'Salário', 'SS']
+
+        sheet_sal["SS"] = sheet_sal["SS"] * 100
         sheet_sal['person'] = contract.person
         sheet_sal['date'] = pd.to_datetime(sheet_sal['date'])
 

@@ -52,16 +52,16 @@ def get_disabled_columns(project):
 def get_salary_table(data):
     df = {"Data": [], "Salário": [], "SS": []}
 
-    previous_value = -1
+    previous_value = (-1, -1)
 
     # Iterate over the DataFrame
     for col in data:
-        value = data[col].loc['Salário']
+        value = (data[col].loc['Salário'], data[col].loc['SS'])
 
         if value != previous_value:
             df['Data'].append(col)
-            df['Salário'].append(value)
-            df["SS"].append(data[col].loc["SS"])
+            df['Salário'].append(value[0])
+            df["SS"].append(value[1])
 
         previous_value = value
 
